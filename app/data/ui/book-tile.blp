@@ -1,0 +1,77 @@
+using Gtk 4.0;
+
+template $ArmariumBookTile: Gtk.Box {
+  orientation: vertical;
+  spacing: 6;
+
+  Gtk.Overlay cover {
+    overflow: hidden;
+    halign: center;
+
+    child: Gtk.Picture picture {
+      content-fit: cover;
+      can-shrink: true;
+    };
+
+    [overlay]
+    Gtk.Box placeholder {
+      orientation: vertical;
+      spacing: 6;
+
+      styles [
+        "cover-placeholder",
+      ]
+
+      Gtk.Label placeholder_title {
+        wrap: true;
+        wrap-mode: word_char;
+        justify: center;
+        lines: 5;
+        ellipsize: end;
+        vexpand: true;
+        valign: end;
+
+        styles [
+          "heading",
+        ]
+      }
+
+      Gtk.Label placeholder_author {
+        wrap: true;
+        justify: center;
+        lines: 2;
+        ellipsize: end;
+        vexpand: true;
+        valign: start;
+
+        styles [
+          "caption",
+        ]
+      }
+    }
+
+    styles [
+      "cover",
+      "card",
+    ]
+  }
+
+  Gtk.Label title_label {
+    xalign: 0;
+    ellipsize: end;
+
+    styles [
+      "heading",
+    ]
+  }
+
+  Gtk.Label author_label {
+    xalign: 0;
+    ellipsize: end;
+
+    styles [
+      "caption",
+      "dimmed",
+    ]
+  }
+}

@@ -1,4 +1,4 @@
-//! Saving a Book's `cover.jpg`.
+//! Saving a Book's `cover.jpg`, and thumbnails of it for the UI.
 
 use std::path::Path;
 
@@ -20,15 +20,34 @@ pub fn save(encoded: &[u8], dest: &Path) -> Result<()> {
         .with_guessed_format()?
         .decode()
         .map_err(|e| Error::Unreadable(format!("cover image: {e}")))?;
-    let image = if image.width().max(image.height()) > MAX_SIDE {
-        image.resize(MAX_SIDE, MAX_SIDE, FilterType::Lanczos3)
+    write_jpeg(&fit(image, MAX_SIDE, FilterType::Lanczos3), dest)
+}
+
+/// Writes a copy of the Cover at `cover` scaled to fit within `max_side` to
+/// `dest`, creating its folder. Meant for a rebuildable cache.
+pub fn thumbnail(cover: &Path, dest: &Path, max_side: u32) -> Result<()> {
+    let image = ImageReader::open(cover)?
+        .with_guessed_format()?
+        .decode()
+        .map_err(|e| Error::Unreadable(format!("cover image: {e}")))?;
+    if let Some(dir) = dest.parent() {
+        std::fs::create_dir_all(dir)?;
+    }
+    write_jpeg(&fit(image, max_side, FilterType::Triangle), dest)
+}
+
+fn fit(image: DynamicImage, max_side: u32, filter: FilterType) -> DynamicImage {
+    if image.width().max(image.height()) > max_side {
+        image.resize(max_side, max_side, filter)
     } else {
         image
-    };
+    }
+}
 
+fn write_jpeg(image: &DynamicImage, dest: &Path) -> Result<()> {
     let mut jpeg = Vec::new();
     JpegEncoder::new_with_quality(&mut jpeg, JPEG_QUALITY)
-        .encode_image(&flatten(&image))
+        .encode_image(&flatten(image))
         .map_err(|e| Error::Unreadable(format!("cover image: {e}")))?;
 
     let tmp = dest.with_extension("jpg.tmp");
@@ -55,7 +74,7 @@ fn flatten(image: &DynamicImage) -> RgbImage {
 mod tests {
     use super::*;
     use crate::fixtures::TempDir;
-    use image::{ImageFormat, Rgba, RgbaImage};
+    use image::{GenericImageView, ImageFormat, Rgba, RgbaImage};
 
     fn encode(image: DynamicImage, format: ImageFormat) -> Vec<u8> {
         let mut bytes = Vec::new();
@@ -93,6 +112,19 @@ mod tests {
         let saved = image::open(&dest).unwrap().to_rgb8();
         assert_eq!(saved.dimensions(), (40, 60));
         assert!(saved.get_pixel(20, 30).0.iter().all(|&c| c > 250));
+    }
+
+    #[test]
+    fn thumbnails_are_scaled_copies_in_new_folders() {
+        let dir = TempDir::new();
+        let cover = dir.path().join("cover.jpg");
+        let big = DynamicImage::ImageRgb8(RgbImage::from_pixel(800, 1200, image::Rgb([0, 90, 0])));
+        save(&encode(big, ImageFormat::Png), &cover).unwrap();
+
+        let thumb = dir.path().join("cache/thumbs/1.jpg");
+        thumbnail(&cover, &thumb, 300).unwrap();
+        assert_eq!(image::open(&thumb).unwrap().dimensions(), (200, 300));
+        assert!(cover.exists());
     }
 
     #[test]

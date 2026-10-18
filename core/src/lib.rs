@@ -1,6 +1,6 @@
 //! Armarium's Library: database, Import, Metadata and Cover extraction.
 
-mod cover;
+pub mod cover;
 pub mod db;
 mod edit;
 mod error;

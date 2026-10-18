@@ -1,0 +1,121 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $ArmariumWindow: Adw.ApplicationWindow {
+  default-width: 1100;
+  default-height: 760;
+  title: _("Armarium");
+
+  content: Adw.ToastOverlay toast_overlay {
+    child: Adw.ToolbarView {
+      [top]
+      Adw.HeaderBar {
+        [start]
+        Adw.SplitButton {
+          label: _("_Import");
+          use-underline: true;
+          tooltip-text: _("Import Files");
+          action-name: "win.import-files";
+          menu-model: import_menu;
+          dropdown-tooltip: _("More Import Options");
+        }
+
+        title-widget: Gtk.SearchEntry search_entry {
+          placeholder-text: _("Search title, author or series");
+          width-request: 360;
+        };
+
+        [end]
+        Gtk.MenuButton {
+          icon-name: "open-menu-symbolic";
+          menu-model: primary_menu;
+          primary: true;
+          tooltip-text: _("Main Menu");
+        }
+      }
+
+      content: Gtk.Overlay {
+        child: Gtk.Stack stack {
+          transition-type: crossfade;
+
+          Gtk.StackPage {
+            name: "empty";
+
+            child: Adw.StatusPage {
+              icon-name: "accessories-dictionary-symbolic";
+              title: _("No Books Yet");
+              description: _("Import EPUB or PDF files, or drop them here");
+
+              child: Gtk.Button {
+                label: _("_Import Books…");
+                use-underline: true;
+                action-name: "win.import-files";
+                halign: center;
+
+                styles [
+                  "pill",
+                  "suggested-action",
+                ]
+              };
+            };
+          }
+
+          Gtk.StackPage {
+            name: "no-results";
+
+            child: Adw.StatusPage {
+              icon-name: "system-search-symbolic";
+              title: _("No Results");
+              description: _("Try a different search");
+            };
+          }
+
+          Gtk.StackPage {
+            name: "grid";
+
+            child: Gtk.ScrolledWindow {
+              hscrollbar-policy: never;
+
+              child: Gtk.GridView grid_view {
+                max-columns: 32;
+                single-click-activate: false;
+
+                styles [
+                  "book-grid",
+                ]
+              };
+            };
+          }
+        };
+
+        [overlay]
+        Gtk.ProgressBar progress_bar {
+          valign: start;
+          visible: false;
+
+          styles [
+            "osd",
+          ]
+        }
+      };
+    };
+  };
+}
+
+menu import_menu {
+  section {
+    item {
+      label: _("Import _Folder…");
+      action: "win.import-folder";
+    }
+  }
+}
+
+menu primary_menu {
+  section {
+    item {
+      label: _("_About Armarium");
+      action: "app.about";
+    }
+  }
+}

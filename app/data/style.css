@@ -1,0 +1,19 @@
+/* Loaded automatically by AdwApplication from the resource base path. */
+
+.book-grid {
+  padding: 12px;
+}
+
+.book-grid > child {
+  padding: 12px;
+  border-radius: 12px;
+}
+
+.cover {
+  border-radius: 6px;
+}
+
+.cover-placeholder {
+  padding: 12px;
+  background: linear-gradient(to bottom, alpha(var(--accent-bg-color), 0.25), alpha(var(--accent-bg-color), 0.55));
+}
