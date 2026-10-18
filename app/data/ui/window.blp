@@ -55,84 +55,93 @@ template $ArmariumWindow: Adw.ApplicationWindow {
         }
       }
 
-      content: Gtk.Overlay {
-        child: Gtk.Stack stack {
-          transition-type: crossfade;
+      content: Adw.OverlaySplitView split_view {
+        sidebar-position: end;
+        show-sidebar: false;
+        min-sidebar-width: 300;
+        max-sidebar-width: 380;
 
-          Gtk.StackPage {
-            name: "empty";
+        content: Gtk.Overlay {
+          child: Gtk.Stack stack {
+            transition-type: crossfade;
 
-            child: Adw.StatusPage {
-              icon-name: "accessories-dictionary-symbolic";
-              title: _("No Books Yet");
-              description: _("Import EPUB or PDF files, or drop them here");
+            Gtk.StackPage {
+              name: "empty";
 
-              child: Gtk.Button {
-                label: _("_Import Books…");
-                use-underline: true;
-                action-name: "win.import-files";
-                halign: center;
+              child: Adw.StatusPage {
+                icon-name: "accessories-dictionary-symbolic";
+                title: _("No Books Yet");
+                description: _("Import EPUB or PDF files, or drop them here");
 
-                styles [
-                  "pill",
-                  "suggested-action",
-                ]
+                child: Gtk.Button {
+                  label: _("_Import Books…");
+                  use-underline: true;
+                  action-name: "win.import-files";
+                  halign: center;
+
+                  styles [
+                    "pill",
+                    "suggested-action",
+                  ]
+                };
               };
-            };
-          }
+            }
 
-          Gtk.StackPage {
-            name: "no-results";
+            Gtk.StackPage {
+              name: "no-results";
 
-            child: Adw.StatusPage {
-              icon-name: "system-search-symbolic";
-              title: _("No Results");
-              description: _("Try a different search");
-            };
-          }
-
-          Gtk.StackPage {
-            name: "grid";
-
-            child: Gtk.ScrolledWindow {
-              hscrollbar-policy: never;
-
-              child: Gtk.GridView grid_view {
-                max-columns: 32;
-                single-click-activate: false;
-
-                styles [
-                  "book-grid",
-                ]
+              child: Adw.StatusPage {
+                icon-name: "system-search-symbolic";
+                title: _("No Results");
+                description: _("Try a different search");
               };
-            };
-          }
+            }
 
-          Gtk.StackPage {
-            name: "list";
+            Gtk.StackPage {
+              name: "grid";
 
-            child: Gtk.ScrolledWindow {
-              child: Gtk.ColumnView column_view {
-                reorderable: false;
-                show-row-separators: true;
+              child: Gtk.ScrolledWindow {
+                hscrollbar-policy: never;
 
-                styles [
-                  "book-list",
-                ]
+                child: Gtk.GridView grid_view {
+                  max-columns: 32;
+                  single-click-activate: false;
+
+                  styles [
+                    "book-grid",
+                  ]
+                };
               };
-            };
+            }
+
+            Gtk.StackPage {
+              name: "list";
+
+              child: Gtk.ScrolledWindow {
+                child: Gtk.ColumnView column_view {
+                  reorderable: false;
+                  show-row-separators: true;
+
+                  styles [
+                    "book-list",
+                  ]
+                };
+              };
+            }
+          };
+
+          [overlay]
+          Gtk.ProgressBar progress_bar {
+            valign: start;
+            visible: false;
+
+            styles [
+              "osd",
+            ]
           }
         };
 
-        [overlay]
-        Gtk.ProgressBar progress_bar {
-          valign: start;
-          visible: false;
-
-          styles [
-            "osd",
-          ]
-        }
+        sidebar: $ArmariumBookDetails details {};
       };
     };
   };

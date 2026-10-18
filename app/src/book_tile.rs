@@ -75,6 +75,12 @@ impl BookTile {
         self.set_size_request(width, -1);
     }
 
+    /// Hides the title and authors under the Cover, for the details sidebar.
+    pub fn set_caption_visible(&self, visible: bool) {
+        self.imp().title_label.set_visible(visible);
+        self.imp().author_label.set_visible(visible);
+    }
+
     pub fn bind(&self, book: &Book, cover: Option<PathBuf>, thumbnails: &Rc<Thumbnails>) {
         let imp = self.imp();
         let authors = authors_line(book);

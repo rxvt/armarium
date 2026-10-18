@@ -15,6 +15,9 @@ use crate::thumbnails::Thumbnails;
 /// Finds a Book's `cover.jpg`, which needs the window's Library.
 pub type CoverPath = Rc<dyn Fn(&Book) -> Option<PathBuf>>;
 
+/// Called with each cell's widget as it is created, e.g. to add a context menu.
+pub type SetupCell = Rc<dyn Fn(&gtk::Widget, &gtk::ColumnViewCell)>;
+
 const COVER_WIDTH: i32 = 32;
 
 /// Adds the columns to `view` and returns the Date added column, which the
@@ -23,8 +26,11 @@ pub fn add_columns(
     view: &gtk::ColumnView,
     thumbnails: Rc<Thumbnails>,
     cover_path: CoverPath,
+    setup: SetupCell,
 ) -> gtk::ColumnViewColumn {
-    view.append_column(&cover_column(thumbnails, cover_path));
+    view.append_column(&cover_column(thumbnails, cover_path, setup.clone()));
+    let text_column =
+        |title: &str, key, text: fn(&Book) -> String| text_column(title, key, text, setup.clone());
     let title = text_column("Title", SortKey::Title, |b| b.metadata.title.clone());
     title.set_expand(true);
     view.append_column(&title);
@@ -53,17 +59,21 @@ fn sorter(key: SortKey) -> gtk::CustomSorter {
 fn text_column(
     title: &str,
     key: SortKey,
-    text: impl Fn(&Book) -> String + 'static,
+    text: fn(&Book) -> String,
+    setup: SetupCell,
 ) -> gtk::ColumnViewColumn {
     let factory = gtk::SignalListItemFactory::new();
-    factory.connect_setup(|_, cell| {
+    factory.connect_setup(move |_, cell| {
+        let cell = cell.downcast_ref::<gtk::ColumnViewCell>().unwrap();
+        // Fills the cell, so a right-click anywhere in it reaches the label.
         let label = gtk::Label::builder()
             .xalign(0.0)
+            .hexpand(true)
+            .vexpand(true)
             .ellipsize(gtk::pango::EllipsizeMode::End)
             .build();
-        cell.downcast_ref::<gtk::ColumnViewCell>()
-            .unwrap()
-            .set_child(Some(&label));
+        setup(label.upcast_ref(), cell);
+        cell.set_child(Some(&label));
     });
     factory.connect_bind(move |_, cell| {
         let cell = cell.downcast_ref::<gtk::ColumnViewCell>().unwrap();
@@ -83,9 +93,14 @@ fn text_column(
     column
 }
 
-fn cover_column(thumbnails: Rc<Thumbnails>, cover_path: CoverPath) -> gtk::ColumnViewColumn {
+fn cover_column(
+    thumbnails: Rc<Thumbnails>,
+    cover_path: CoverPath,
+    setup: SetupCell,
+) -> gtk::ColumnViewColumn {
     let factory = gtk::SignalListItemFactory::new();
-    factory.connect_setup(|_, cell| {
+    factory.connect_setup(move |_, cell| {
+        let cell = cell.downcast_ref::<gtk::ColumnViewCell>().unwrap();
         let picture = gtk::Picture::builder()
             .content_fit(gtk::ContentFit::Cover)
             .can_shrink(true)
@@ -95,9 +110,8 @@ fn cover_column(thumbnails: Rc<Thumbnails>, cover_path: CoverPath) -> gtk::Colum
             .overflow(gtk::Overflow::Hidden)
             .css_classes(["cover", "list-cover"])
             .build();
-        cell.downcast_ref::<gtk::ColumnViewCell>()
-            .unwrap()
-            .set_child(Some(&picture));
+        setup(picture.upcast_ref(), cell);
+        cell.set_child(Some(&picture));
     });
     factory.connect_bind(move |_, cell| {
         let cell = cell.downcast_ref::<gtk::ColumnViewCell>().unwrap();

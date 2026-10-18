@@ -1,6 +1,8 @@
-//! The main window: header bar, cover grid and list, Import and opening Books.
+//! The main window: header bar, cover grid and list, details sidebar,
+//! Import, and opening and deleting Books.
 
 use std::cell::{Cell, RefCell};
+use std::collections::HashSet;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
@@ -10,9 +12,10 @@ use adw::prelude::*;
 use adw::subclass::prelude::*;
 use armarium_core::Library;
 use armarium_core::import::{ImportReport, Outcome};
-use armarium_core::model::FormatKind;
+use armarium_core::model::{Book, BookId, Format, FormatKind};
 use gtk::{gdk, gio, glib};
 
+use crate::book_details::BookDetails;
 use crate::book_list;
 use crate::book_object::BookObject;
 use crate::book_tile::BookTile;
@@ -39,12 +42,17 @@ mod imp {
         #[template_child]
         pub view_toggle: TemplateChild<adw::ToggleGroup>,
         #[template_child]
+        pub split_view: TemplateChild<adw::OverlaySplitView>,
+        #[template_child]
+        pub details: TemplateChild<BookDetails>,
+        #[template_child]
         pub progress_bar: TemplateChild<gtk::ProgressBar>,
 
         pub library: RefCell<Option<Library>>,
         pub store: RefCell<Option<gio::ListStore>>,
         pub filter: RefCell<Option<gtk::CustomFilter>>,
         pub filtered: RefCell<Option<gtk::FilterListModel>>,
+        pub selection: RefCell<Option<gtk::MultiSelection>>,
         pub thumbnails: RefCell<Option<Rc<Thumbnails>>>,
         pub cover_width: Cell<i32>,
         pub importing: Cell<bool>,
@@ -57,6 +65,7 @@ mod imp {
         type ParentType = adw::ApplicationWindow;
 
         fn class_init(klass: &mut Self::Class) {
+            BookDetails::ensure_type();
             klass.bind_template();
 
             klass.install_action("win.import-files", None, |win, _, _| win.choose_files());
@@ -70,6 +79,26 @@ mod imp {
             klass.install_action("win.search", None, |win, _, _| {
                 win.imp().search_entry.grab_focus();
             });
+            klass.install_action(
+                "win.open-format",
+                Some(glib::VariantTy::STRING),
+                |win, _, ext| {
+                    if let Some(ext) = ext.and_then(|v| v.get::<String>()) {
+                        win.open_selected_format(&ext);
+                    }
+                },
+            );
+            klass.install_action("win.show-in-files", None, |win, _, _| win.show_in_files());
+            klass.install_action("win.delete", None, |win, _, _| win.confirm_delete_books());
+            klass.install_action(
+                "win.delete-format",
+                Some(glib::VariantTy::STRING),
+                |win, _, ext| {
+                    if let Some(ext) = ext.and_then(|v| v.get::<String>()) {
+                        win.confirm_delete_format(&ext);
+                    }
+                },
+            );
         }
 
         fn instance_init(obj: &glib::subclass::InitializingObject<Self>) {
@@ -145,10 +174,65 @@ impl Window {
         let selection = gtk::MultiSelection::new(Some(sorted));
         imp.grid_view.set_model(Some(&selection));
         imp.column_view.set_model(Some(&selection));
+        selection.connect_selection_changed(glib::clone!(
+            #[weak(rename_to = win)]
+            self,
+            move |_, _, _| win.update_selection()
+        ));
+        selection.connect_items_changed(glib::clone!(
+            #[weak(rename_to = win)]
+            self,
+            move |_, _, _, _| win.update_selection()
+        ));
 
         imp.store.replace(Some(store));
         imp.filter.replace(Some(filter));
         imp.filtered.replace(Some(filtered));
+        imp.selection.replace(Some(selection));
+        self.update_selection();
+    }
+
+    fn selection(&self) -> gtk::MultiSelection {
+        self.imp()
+            .selection
+            .borrow()
+            .clone()
+            .expect("models are set up")
+    }
+
+    fn selected_books(&self) -> Vec<BookObject> {
+        let selection = self.selection();
+        let set = selection.selection();
+        (0..set.size() as u32)
+            .filter_map(|i| selection.item(set.nth(i)).and_downcast::<BookObject>())
+            .collect()
+    }
+
+    /// The selected Book, when exactly one is selected.
+    fn selected_book(&self) -> Option<BookObject> {
+        match <[BookObject; 1]>::try_from(self.selected_books()) {
+            Ok([book]) => Some(book),
+            Err(_) => None,
+        }
+    }
+
+    /// Shows the details sidebar for a single selection and enables the
+    /// actions that apply.
+    fn update_selection(&self) {
+        let imp = self.imp();
+        let count = self.selection().selection().size();
+        let single = self.selected_book();
+        if let Some(obj) = &single {
+            let book = obj.book();
+            let cover = self.with_library(|lib| lib.cover_path(&book)).flatten();
+            let thumbnails = imp.thumbnails.borrow().clone().unwrap();
+            imp.details.show(&book, cover, &thumbnails);
+        }
+        imp.split_view.set_show_sidebar(single.is_some());
+        for action in ["win.open-format", "win.show-in-files", "win.delete-format"] {
+            self.action_set_enabled(action, single.is_some());
+        }
+        self.action_set_enabled("win.delete", count > 0);
     }
 
     fn setup_grid(&self) {
@@ -157,11 +241,11 @@ impl Window {
             #[weak(rename_to = win)]
             self,
             move |_, item| {
+                let item = item.downcast_ref::<gtk::ListItem>().unwrap();
                 let tile = BookTile::new();
                 tile.set_cover_width(win.imp().cover_width.get());
-                item.downcast_ref::<gtk::ListItem>()
-                    .unwrap()
-                    .set_child(Some(&tile));
+                win.attach_context_menu(tile.upcast_ref(), item);
+                item.set_child(Some(&tile));
             }
         ));
         factory.connect_bind(glib::clone!(
@@ -198,6 +282,7 @@ impl Window {
             self,
             move |grid, position| win.open_at(grid.model(), position)
         ));
+        grid.add_controller(delete_shortcut());
     }
 
     fn setup_list(&self) {
@@ -210,7 +295,13 @@ impl Window {
             None,
             move |book| win.with_library(|lib| lib.cover_path(book)).flatten()
         ));
-        let date_added = book_list::add_columns(&imp.column_view, thumbnails, cover_path);
+        let setup_cell: book_list::SetupCell = Rc::new(glib::clone!(
+            #[weak(rename_to = win)]
+            self,
+            move |widget, cell| win.attach_context_menu(widget, cell.upcast_ref())
+        ));
+        let date_added =
+            book_list::add_columns(&imp.column_view, thumbnails, cover_path, setup_cell);
         imp.column_view
             .sort_by_column(Some(&date_added), gtk::SortType::Descending);
         imp.column_view.connect_activate(glib::clone!(
@@ -218,6 +309,7 @@ impl Window {
             self,
             move |view, position| win.open_at(view.model(), position)
         ));
+        imp.column_view.add_controller(delete_shortcut());
         imp.view_toggle.connect_active_name_notify(glib::clone!(
             #[weak(rename_to = win)]
             self,
@@ -264,6 +356,10 @@ impl Window {
         self.imp().library.borrow().as_ref().map(f)
     }
 
+    fn with_library_mut<T>(&self, f: impl FnOnce(&mut Library) -> T) -> Option<T> {
+        self.imp().library.borrow_mut().as_mut().map(f)
+    }
+
     fn open_library(&self, root: PathBuf) {
         match Library::open(root) {
             Ok(library) => {
@@ -284,9 +380,23 @@ impl Window {
             }
             None => Vec::new(),
         };
+        let selected: HashSet<BookId> = self
+            .selected_books()
+            .iter()
+            .map(|obj| obj.book().id)
+            .collect();
         let objects: Vec<BookObject> = books.into_iter().map(BookObject::new).collect();
         let store = self.store();
         store.splice(0, store.n_items(), &objects);
+        // Keep the same Books selected, e.g. after deleting one Format.
+        let selection = self.selection();
+        for position in 0..selection.n_items() {
+            if let Some(obj) = selection.item(position).and_downcast::<BookObject>()
+                && selected.contains(&obj.book().id)
+            {
+                selection.select_item(position, false);
+            }
+        }
         self.update_page();
     }
 
@@ -508,13 +618,27 @@ impl Window {
     /// Opens the Book's EPUB if it has one, else its PDF, in the default Reader.
     fn open_book(&self, obj: &BookObject) {
         let book = obj.book();
-        let Some(format) = book
+        if let Some(format) = book
             .format(FormatKind::Epub)
             .or_else(|| book.format(FormatKind::Pdf))
+        {
+            self.open_format(&book, format);
+        }
+    }
+
+    fn open_selected_format(&self, ext: &str) {
+        let (Some(obj), Some(kind)) = (self.selected_book(), FormatKind::from_extension(ext))
         else {
             return;
         };
-        let Some(path) = self.with_library(|lib| lib.format_path(&book, format)) else {
+        let book = obj.book();
+        if let Some(format) = book.format(kind) {
+            self.open_format(&book, format);
+        }
+    }
+
+    fn open_format(&self, book: &Book, format: &Format) {
+        let Some(path) = self.with_library(|lib| lib.format_path(book, format)) else {
             return;
         };
         if !path.exists() {
@@ -531,16 +655,198 @@ impl Window {
             glib::clone!(
                 #[weak(rename_to = win)]
                 self,
-                move |result| {
-                    if let Err(e) = result
-                        && !e.matches(gtk::DialogError::Dismissed)
-                    {
-                        win.toast(&format!("Could not open the book: {}", e.message()));
-                    }
-                }
+                move |result| win.report_launch(result, "Could not open the book")
             ),
         );
     }
+
+    /// Opens the file manager on the selected Book's first Format, or its
+    /// folder if the Format file is gone.
+    fn show_in_files(&self) {
+        let Some(obj) = self.selected_book() else {
+            return;
+        };
+        let book = obj.book();
+        let Some((dir, file)) = self.with_library(|lib| {
+            let file = book.formats.first().map(|f| lib.format_path(&book, f));
+            (lib.book_dir(&book), file)
+        }) else {
+            return;
+        };
+        let callback = glib::clone!(
+            #[weak(rename_to = win)]
+            self,
+            move |result| win.report_launch(result, "Could not show the book")
+        );
+        match file.filter(|f| f.exists()) {
+            Some(file) => gtk::FileLauncher::new(Some(&gio::File::for_path(file)))
+                .open_containing_folder(Some(self), gio::Cancellable::NONE, callback),
+            None => gtk::FileLauncher::new(Some(&gio::File::for_path(dir))).launch(
+                Some(self),
+                gio::Cancellable::NONE,
+                callback,
+            ),
+        }
+    }
+
+    fn report_launch(&self, result: Result<(), glib::Error>, what: &str) {
+        if let Err(e) = result
+            && !e.matches(gtk::DialogError::Dismissed)
+        {
+            self.toast(&format!("{what}: {}", e.message()));
+        }
+    }
+
+    /// Right-clicking `widget`, which shows the item at `item`'s position,
+    /// selects that Book (unless it is already part of the selection) and
+    /// pops up a menu for the selection.
+    fn attach_context_menu(&self, widget: &gtk::Widget, item: &gtk::ListItem) {
+        let click = gtk::GestureClick::builder()
+            .button(gdk::BUTTON_SECONDARY)
+            .build();
+        let item = item.downgrade();
+        click.connect_pressed(glib::clone!(
+            #[weak(rename_to = win)]
+            self,
+            #[weak]
+            widget,
+            move |gesture, _, x, y| {
+                let Some(item) = item.upgrade() else {
+                    return;
+                };
+                gesture.set_state(gtk::EventSequenceState::Claimed);
+                let selection = win.selection();
+                if !selection.is_selected(item.position()) {
+                    selection.select_item(item.position(), true);
+                }
+                win.popup_context_menu(&widget, x, y);
+            }
+        ));
+        widget.add_controller(click);
+    }
+
+    fn popup_context_menu(&self, widget: &gtk::Widget, x: f64, y: f64) {
+        let books = self.selected_books();
+        let menu = gio::Menu::new();
+        if let [obj] = books.as_slice() {
+            let open = gio::Menu::new();
+            for format in &obj.book().formats {
+                open.append(
+                    Some(&format!("Open {}", format.kind.label())),
+                    Some(&format!("win.open-format::{}", format.kind.extension())),
+                );
+            }
+            menu.append_section(None, &open);
+            let files = gio::Menu::new();
+            files.append(Some("Show in Files"), Some("win.show-in-files"));
+            menu.append_section(None, &files);
+        }
+        let delete = gio::Menu::new();
+        let label = match books.len() {
+            1 => "Move to Trash…".to_owned(),
+            n => format!("Move {n} Books to Trash…"),
+        };
+        delete.append(Some(&label), Some("win.delete"));
+        menu.append_section(None, &delete);
+
+        let popover = gtk::PopoverMenu::from_model(Some(&menu));
+        popover.set_parent(widget);
+        popover.set_has_arrow(false);
+        popover.set_halign(gtk::Align::Start);
+        popover.set_pointing_to(Some(&gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+        popover.connect_closed(|popover| {
+            // Unparent once the menu item's action has run.
+            let popover = popover.clone();
+            glib::idle_add_local_once(move || popover.unparent());
+        });
+        popover.popup();
+    }
+
+    fn confirm_delete_books(&self) {
+        let books = self.selected_books();
+        let (heading, body) = match books.as_slice() {
+            [] => return,
+            [obj] => (
+                format!("Move “{}” to the Trash?", obj.book().metadata.title),
+                "Its files are moved to the Trash and it is removed from the library.",
+            ),
+            _ => (
+                format!("Move {} Books to the Trash?", books.len()),
+                "Their files are moved to the Trash and they are removed from the library.",
+            ),
+        };
+        let ids: Vec<BookId> = books.iter().map(|obj| obj.book().id).collect();
+        self.confirm_trash(&heading, body, move |win| {
+            win.with_library_mut(|lib| lib.delete_books(&ids))
+        });
+    }
+
+    fn confirm_delete_format(&self, ext: &str) {
+        let (Some(obj), Some(kind)) = (self.selected_book(), FormatKind::from_extension(ext))
+        else {
+            return;
+        };
+        let book = obj.book();
+        let Some(format) = book.format(kind) else {
+            return;
+        };
+        let heading = format!(
+            "Move the {} of “{}” to the Trash?",
+            kind.label(),
+            book.metadata.title
+        );
+        let body = if book.formats.len() == 1 {
+            "It is the book’s only format, so the book is removed from the library too."
+        } else {
+            "The book keeps its other formats."
+        };
+        let (id, format) = (book.id, format.id);
+        self.confirm_trash(&heading, body, move |win| {
+            win.with_library_mut(|lib| lib.delete_format(id, format))
+        });
+    }
+
+    /// Asks before moving files to the Trash, then runs `delete` and reloads.
+    fn confirm_trash(
+        &self,
+        heading: &str,
+        body: &str,
+        delete: impl Fn(&Window) -> Option<armarium_core::Result<()>> + 'static,
+    ) {
+        let dialog = adw::AlertDialog::new(Some(heading), Some(body));
+        dialog.add_responses(&[("cancel", "_Cancel"), ("delete", "_Move to Trash")]);
+        dialog.set_response_appearance("delete", adw::ResponseAppearance::Destructive);
+        dialog.set_default_response(Some("cancel"));
+        dialog.set_close_response("cancel");
+        dialog.connect_response(
+            Some("delete"),
+            glib::clone!(
+                #[weak(rename_to = win)]
+                self,
+                move |_, _| {
+                    if let Some(Err(e)) = delete(&win) {
+                        win.toast(&format!("Could not move to the Trash: {e}"));
+                    }
+                    win.reload();
+                }
+            ),
+        );
+        dialog.present(Some(self));
+    }
+}
+
+/// Delete moves the selected Books to the Trash, from either view.
+fn delete_shortcut() -> gtk::ShortcutController {
+    let shortcut = gtk::Shortcut::new(
+        Some(gtk::KeyvalTrigger::new(
+            gdk::Key::Delete,
+            gdk::ModifierType::empty(),
+        )),
+        Some(gtk::NamedAction::new("win.delete")),
+    );
+    let controller = gtk::ShortcutController::new();
+    controller.add_shortcut(shortcut);
+    controller
 }
 
 fn file_paths(files: &gio::ListModel) -> Vec<PathBuf> {

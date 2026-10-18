@@ -1,3 +1,4 @@
+mod book_details;
 mod book_list;
 mod book_object;
 mod book_tile;
@@ -43,8 +44,11 @@ fn screenshot_after_startup(window: &gtk::Window, path: std::path::PathBuf) {
             if let Err(e) = texture.save_to_png(&path) {
                 eprintln!("screenshot failed: {e}");
             }
+        } else {
+            eprintln!("screenshot failed: the window has nothing to render");
         }
-        window.close();
+        // Not close(), which would only close an open dialog.
+        window.destroy();
     });
 }
 

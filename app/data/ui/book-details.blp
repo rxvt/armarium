@@ -1,0 +1,82 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $ArmariumBookDetails: Adw.Bin {
+  child: Gtk.ScrolledWindow {
+    hscrollbar-policy: never;
+
+    child: Gtk.Box {
+      orientation: vertical;
+      spacing: 18;
+      margin-top: 18;
+      margin-bottom: 18;
+      margin-start: 18;
+      margin-end: 18;
+
+      $ArmariumBookTile cover {
+        halign: center;
+      }
+
+      Gtk.Box {
+        orientation: vertical;
+        spacing: 6;
+
+        Gtk.Label title_label {
+          wrap: true;
+          wrap-mode: word_char;
+          justify: center;
+          selectable: true;
+
+          styles [
+            "title-2",
+          ]
+        }
+
+        Gtk.Label authors_label {
+          wrap: true;
+          justify: center;
+          selectable: true;
+
+          styles [
+            "dimmed",
+          ]
+        }
+      }
+
+      Adw.PreferencesGroup {
+        title: _("Formats");
+
+        Gtk.ListBox formats_list {
+          selection-mode: none;
+
+          styles [
+            "boxed-list",
+          ]
+        }
+      }
+
+      Adw.PreferencesGroup {
+        title: _("Details");
+
+        Gtk.ListBox details_list {
+          selection-mode: none;
+
+          styles [
+            "boxed-list",
+          ]
+        }
+      }
+
+      Adw.PreferencesGroup description_group {
+        title: _("Description");
+
+        Gtk.Label description_label {
+          wrap: true;
+          wrap-mode: word_char;
+          xalign: 0;
+          selectable: true;
+        }
+      }
+    };
+  };
+}

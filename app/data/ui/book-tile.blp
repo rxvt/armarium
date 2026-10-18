@@ -7,14 +7,9 @@ template $ArmariumBookTile: Gtk.Box {
   Gtk.Overlay cover {
     overflow: hidden;
     halign: center;
-
-    child: Gtk.Picture picture {
-      content-fit: cover;
-      can-shrink: true;
-    };
-
-    [overlay]
-    Gtk.Box placeholder {
+    // The placeholder sizes the Cover; the picture is laid over it so its
+    // natural size (the thumbnail's) never stretches the tile.
+    child: Gtk.Box placeholder {
       orientation: vertical;
       spacing: 6;
 
@@ -48,6 +43,12 @@ template $ArmariumBookTile: Gtk.Box {
           "caption",
         ]
       }
+    };
+
+    [overlay]
+    Gtk.Picture picture {
+      content-fit: cover;
+      can-shrink: true;
     }
 
     styles [
