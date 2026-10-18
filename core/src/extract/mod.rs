@@ -2,6 +2,7 @@
 //! at Import; afterwards the database is the source of truth (ADR 0003).
 
 mod epub;
+mod pdf;
 
 use std::path::Path;
 
@@ -20,7 +21,7 @@ pub struct Extracted {
 pub fn extract(kind: FormatKind, path: &Path) -> Result<Extracted> {
     match kind {
         FormatKind::Epub => epub::extract(path),
-        FormatKind::Pdf => Err(crate::Error::Unreadable("PDF: not supported yet".into())),
+        FormatKind::Pdf => pdf::extract(path),
     }
 }
 

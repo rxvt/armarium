@@ -7,6 +7,9 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+cairo-rs = { version = "0.22.9", default-features = false }
+image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
+poppler-rs = { version = "0.26.0", default-features = false }
 quick-xml = "0.42.0"
 rusqlite = { version = "0.40.2", default-features = false }
 zip = { version = "=9.0.1", default-features = false, features = ["deflate-flate2-zlib-rs"] }

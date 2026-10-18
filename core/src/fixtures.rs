@@ -34,6 +34,78 @@ impl Drop for TempDir {
     }
 }
 
+/// Builds a one-page PDF (300×600 pt, left half filled black) with the
+/// given document info entries.
+pub struct PdfFixture {
+    info: Vec<(String, String)>,
+}
+
+impl PdfFixture {
+    pub fn new() -> PdfFixture {
+        PdfFixture { info: Vec::new() }
+    }
+
+    /// An info entry as a literal string; `value` must be plain ASCII.
+    pub fn info(mut self, key: &str, value: &str) -> Self {
+        let escaped = value
+            .replace('\\', "\\\\")
+            .replace('(', "\\(")
+            .replace(')', "\\)");
+        self.info.push((key.into(), format!("({escaped})")));
+        self
+    }
+
+    /// An info entry as a UTF-16BE hex string, for non-ASCII text.
+    pub fn info_utf16(mut self, key: &str, value: &str) -> Self {
+        let mut hex = String::from("<FEFF");
+        for unit in value.encode_utf16() {
+            hex.push_str(&format!("{unit:04X}"));
+        }
+        hex.push('>');
+        self.info.push((key.into(), hex));
+        self
+    }
+
+    pub fn build(&self) -> Vec<u8> {
+        let content = "0 0 0 rg 0 0 150 600 re f";
+        let info: String = self
+            .info
+            .iter()
+            .map(|(k, v)| format!("/{k} {v} "))
+            .collect();
+        let objects = [
+            "<< /Type /Catalog /Pages 2 0 R >>".to_owned(),
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>".to_owned(),
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 600] /Contents 4 0 R >>".to_owned(),
+            format!(
+                "<< /Length {} >>\nstream\n{content}\nendstream",
+                content.len()
+            ),
+            format!("<< {info}>>"),
+        ];
+
+        let mut pdf = b"%PDF-1.4\n".to_vec();
+        let mut offsets = Vec::new();
+        for (i, body) in objects.iter().enumerate() {
+            offsets.push(pdf.len());
+            pdf.extend(format!("{} 0 obj\n{body}\nendobj\n", i + 1).bytes());
+        }
+        let xref = pdf.len();
+        pdf.extend(format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1).bytes());
+        for offset in offsets {
+            pdf.extend(format!("{offset:010} 00000 n \n").bytes());
+        }
+        pdf.extend(
+            format!(
+                "trailer\n<< /Size {} /Root 1 0 R /Info 5 0 R >>\nstartxref\n{xref}\n%%EOF\n",
+                objects.len() + 1
+            )
+            .bytes(),
+        );
+        pdf
+    }
+}
+
 /// Builds a minimal EPUB: `mimetype`, `META-INF/container.xml` and an OPF
 /// with the given metadata and manifest children, plus any extra files.
 pub struct EpubFixture {
