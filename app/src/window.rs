@@ -1,7 +1,7 @@
 //! The main window: header bar, cover grid and list, details sidebar,
 //! Import, and opening and deleting Books.
 
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -20,9 +20,13 @@ use crate::book_list;
 use crate::book_object::BookObject;
 use crate::book_tile::BookTile;
 use crate::metadata_dialog::MetadataDialog;
+use crate::settings::Settings;
 use crate::thumbnails::Thumbnails;
 
 const DEFAULT_COVER_WIDTH: i32 = 160;
+/// Cover widths Ctrl+scroll and Ctrl+± step through.
+const COVER_WIDTHS: std::ops::RangeInclusive<i32> = 96..=320;
+const COVER_WIDTH_STEP: i32 = 32;
 
 mod imp {
     use super::*;
@@ -56,6 +60,8 @@ mod imp {
         pub selection: RefCell<Option<gtk::MultiSelection>>,
         pub thumbnails: RefCell<Option<Rc<Thumbnails>>>,
         pub cover_width: Cell<i32>,
+        pub grid_factory: OnceCell<gtk::SignalListItemFactory>,
+        pub settings: OnceCell<Settings>,
         pub importing: Cell<bool>,
     }
 
@@ -91,6 +97,28 @@ mod imp {
             );
             klass.install_action("win.show-in-files", None, |win, _, _| win.show_in_files());
             klass.install_action("win.edit", None, |win, _, _| win.edit_selected());
+            klass.install_action("win.preferences", None, |win, _, _| win.show_preferences());
+            klass.add_binding_action(
+                gdk::Key::comma,
+                gdk::ModifierType::CONTROL_MASK,
+                "win.preferences",
+            );
+            klass.install_action("win.zoom-in", None, |win, _, _| win.zoom(1));
+            klass.install_action("win.zoom-out", None, |win, _, _| win.zoom(-1));
+            klass.install_action("win.zoom-reset", None, |win, _, _| {
+                win.set_cover_width(DEFAULT_COVER_WIDTH)
+            });
+            for (key, action) in [
+                (gdk::Key::plus, "win.zoom-in"),
+                (gdk::Key::equal, "win.zoom-in"),
+                (gdk::Key::KP_Add, "win.zoom-in"),
+                (gdk::Key::minus, "win.zoom-out"),
+                (gdk::Key::KP_Subtract, "win.zoom-out"),
+                (gdk::Key::_0, "win.zoom-reset"),
+                (gdk::Key::KP_0, "win.zoom-reset"),
+            ] {
+                klass.add_binding_action(key, gdk::ModifierType::CONTROL_MASK, action);
+            }
             klass.install_action("win.delete", None, |win, _, _| win.confirm_delete_books());
             klass.install_action(
                 "win.delete-format",
@@ -112,14 +140,22 @@ mod imp {
         fn constructed(&self) {
             self.parent_constructed();
             let obj = self.obj();
-            self.cover_width.set(DEFAULT_COVER_WIDTH);
+            let settings = Settings::load();
+            self.cover_width
+                .set(settings.cover_width().map_or(DEFAULT_COVER_WIDTH, |w| {
+                    w.clamp(*COVER_WIDTHS.start(), *COVER_WIDTHS.end())
+                }));
+            if let Some(view) = settings.view() {
+                self.view_toggle.set_active_name(Some(&view));
+            }
+            let _ = self.settings.set(settings);
             self.thumbnails.replace(Some(Rc::new(Thumbnails::new())));
             obj.setup_models();
             obj.setup_grid();
             obj.setup_list();
             obj.setup_search();
             obj.setup_drop();
-            obj.open_library(default_library_root());
+            obj.open_library(obj.library_root());
         }
     }
 
@@ -136,16 +172,22 @@ glib::wrapper! {
                     gtk::ConstraintTarget, gtk::Native, gtk::Root, gtk::ShortcutManager;
 }
 
-/// `~/Books`, or `$ARMARIUM_LIBRARY` for trying the app on a scratch Library.
-fn default_library_root() -> PathBuf {
-    std::env::var_os("ARMARIUM_LIBRARY")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| glib::home_dir().join("Books"))
-}
-
 impl Window {
     pub fn new(app: &adw::Application) -> Window {
         glib::Object::builder().property("application", app).build()
+    }
+
+    fn settings(&self) -> &Settings {
+        self.imp().settings.get().expect("settings are loaded")
+    }
+
+    /// `$ARMARIUM_LIBRARY` (for trying the app on a scratch Library), else
+    /// the folder chosen in Preferences, else `~/Books`.
+    fn library_root(&self) -> PathBuf {
+        std::env::var_os("ARMARIUM_LIBRARY")
+            .map(PathBuf::from)
+            .or_else(|| self.settings().library())
+            .unwrap_or_else(|| glib::home_dir().join("Books"))
     }
 
     fn store(&self) -> gio::ListStore {
@@ -284,6 +326,27 @@ impl Window {
         });
         let grid = &self.imp().grid_view;
         grid.set_factory(Some(&factory));
+        let _ = self.imp().grid_factory.set(factory);
+        let scroll = gtk::EventControllerScroll::new(
+            gtk::EventControllerScrollFlags::VERTICAL | gtk::EventControllerScrollFlags::DISCRETE,
+        );
+        scroll.connect_scroll(glib::clone!(
+            #[weak(rename_to = win)]
+            self,
+            #[upgrade_or]
+            glib::Propagation::Proceed,
+            move |scroll, _, dy| {
+                if !scroll
+                    .current_event_state()
+                    .contains(gdk::ModifierType::CONTROL_MASK)
+                {
+                    return glib::Propagation::Proceed;
+                }
+                win.zoom(if dy < 0.0 { 1 } else { -1 });
+                glib::Propagation::Stop
+            }
+        ));
+        grid.add_controller(scroll);
         grid.connect_activate(glib::clone!(
             #[weak(rename_to = win)]
             self,
@@ -320,7 +383,12 @@ impl Window {
         imp.view_toggle.connect_active_name_notify(glib::clone!(
             #[weak(rename_to = win)]
             self,
-            move |_| win.update_page()
+            move |toggle| {
+                if let Some(view) = toggle.active_name() {
+                    win.settings().set_view(&view);
+                }
+                win.update_page();
+            }
         ));
     }
 
@@ -536,7 +604,7 @@ impl Window {
                 // The Import may have created the Library, so reopen it.
                 let root = win
                     .with_library(|lib| lib.root().to_owned())
-                    .unwrap_or_else(default_library_root);
+                    .unwrap_or_else(|| win.library_root());
                 win.open_library(root);
                 match result {
                     Ok(Ok(report)) => win.show_import_summary(report),
@@ -768,6 +836,97 @@ impl Window {
             glib::idle_add_local_once(move || popover.unparent());
         });
         popover.popup();
+    }
+
+    /// Makes grid Covers one step larger (`steps` > 0) or smaller.
+    fn zoom(&self, steps: i32) {
+        self.set_cover_width(self.imp().cover_width.get() + steps * COVER_WIDTH_STEP);
+    }
+
+    /// Resizes the grid's Covers and remembers the size.
+    fn set_cover_width(&self, width: i32) {
+        let imp = self.imp();
+        let width = width.clamp(*COVER_WIDTHS.start(), *COVER_WIDTHS.end());
+        if width == imp.cover_width.get() {
+            return;
+        }
+        imp.cover_width.set(width);
+        self.settings().set_cover_width(width);
+        // Setting the factory again rebuilds every tile at the new size.
+        imp.grid_view.set_factory(gtk::ListItemFactory::NONE);
+        imp.grid_view.set_factory(imp.grid_factory.get());
+    }
+
+    fn show_preferences(&self) {
+        let location = adw::ActionRow::builder()
+            .title("Location")
+            .subtitle(glib::markup_escape_text(&self.library_root().display().to_string()).as_str())
+            .subtitle_selectable(true)
+            .build();
+        let change = gtk::Button::builder()
+            .label("_Change…")
+            .use_underline(true)
+            .valign(gtk::Align::Center)
+            .build();
+        location.add_suffix(&change);
+        let group = adw::PreferencesGroup::builder()
+            .title("Library")
+            .description(
+                "Imported books are copied into this folder. Choosing another folder opens \
+                 the library there, or starts a new one; books are never moved.",
+            )
+            .build();
+        group.add(&location);
+        let page = adw::PreferencesPage::new();
+        page.add(&group);
+        let dialog = adw::PreferencesDialog::new();
+        dialog.add(&page);
+        change.connect_clicked(glib::clone!(
+            #[weak(rename_to = win)]
+            self,
+            #[weak]
+            location,
+            move |_| win.choose_library(&location)
+        ));
+        dialog.present(Some(self));
+    }
+
+    fn choose_library(&self, location: &adw::ActionRow) {
+        if self.imp().importing.get() {
+            self.toast("Wait for the import to finish");
+            return;
+        }
+        let dialog = gtk::FileDialog::builder()
+            .title("Choose Library Folder")
+            .accept_label("_Choose")
+            .initial_folder(&gio::File::for_path(self.library_root()))
+            .build();
+        dialog.select_folder(
+            Some(self),
+            gio::Cancellable::NONE,
+            glib::clone!(
+                #[weak(rename_to = win)]
+                self,
+                #[weak]
+                location,
+                move |result| {
+                    let Some(path) = result.ok().and_then(|f| f.path()) else {
+                        return;
+                    };
+                    win.switch_library(&path);
+                    location.set_subtitle(&glib::markup_escape_text(&path.display().to_string()));
+                }
+            ),
+        );
+    }
+
+    /// Opens the Library at `path` (an empty one if it has none yet) and
+    /// remembers it.
+    fn switch_library(&self, path: &std::path::Path) {
+        self.settings().set_library(path);
+        // Ids from the old Library mean nothing in the new one.
+        self.selection().unselect_all();
+        self.open_library(path.to_owned());
     }
 
     fn edit_selected(&self) {

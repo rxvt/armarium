@@ -1,6 +1,7 @@
 # Standard tasks. `just` lists them.
 
-# Scratch Library and thumbnail cache for manual testing, kept out of ~/Books.
+# Scratch Library, thumbnail cache and settings for manual testing, kept apart
+# from the real ones.
 scratch := justfile_directory() / "target/scratch"
 
 # Sample books to import for manual testing (kept outside the repo).
@@ -75,6 +76,7 @@ try books_dir=books: reset-scratch
 [positional-arguments]
 scratch *args:
     ARMARIUM_LIBRARY={{ quote(scratch / "library") }} XDG_CACHE_HOME={{ quote(scratch / "cache") }} \
+        ARMARIUM_SETTINGS={{ quote(scratch / "settings.ini") }} \
         cargo run -p armarium -- "$@"
 
 # Render the scratch Library's window to a PNG and quit
