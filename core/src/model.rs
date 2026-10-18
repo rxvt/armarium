@@ -95,6 +95,43 @@ pub struct Format {
     pub size: u64,
 }
 
+/// Where a Book's Cover came from. An EPUB's Cover replaces one rendered from
+/// a PDF; nothing replaces one the user chose.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CoverSource {
+    Epub,
+    Pdf,
+    User,
+}
+
+impl CoverSource {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            CoverSource::Epub => "epub",
+            CoverSource::Pdf => "pdf",
+            CoverSource::User => "user",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<CoverSource> {
+        [CoverSource::Epub, CoverSource::Pdf, CoverSource::User]
+            .into_iter()
+            .find(|c| c.as_str() == s)
+    }
+
+    pub fn from_format(kind: FormatKind) -> CoverSource {
+        match kind {
+            FormatKind::Epub => CoverSource::Epub,
+            FormatKind::Pdf => CoverSource::Pdf,
+        }
+    }
+
+    /// Whether a Cover extracted from `kind` should replace this one.
+    pub fn yields_to(self, kind: FormatKind) -> bool {
+        self == CoverSource::Pdf && kind == FormatKind::Epub
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Book {
     pub id: BookId,
@@ -103,6 +140,8 @@ pub struct Book {
     pub date_added: i64,
     /// The Book's folder, relative to the Library root.
     pub path: String,
+    /// `None` when the Book has no `cover.jpg` and shows a placeholder.
+    pub cover: Option<CoverSource>,
     pub formats: Vec<Format>,
 }
 

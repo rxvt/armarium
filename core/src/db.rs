@@ -6,7 +6,7 @@ use std::path::Path;
 
 use rusqlite::{Connection, OptionalExtension, Row, params};
 
-use crate::model::{Author, Book, BookId, Format, FormatId, FormatKind, Metadata};
+use crate::model::{Author, Book, BookId, CoverSource, Format, FormatId, FormatKind, Metadata};
 
 pub use rusqlite::Error;
 pub type Result<T> = std::result::Result<T, Error>;
@@ -28,7 +28,8 @@ const MIGRATIONS: &[&str] = &[
         description  TEXT,
         date_added   INTEGER NOT NULL,
         path         TEXT    NOT NULL,
-        match_key    TEXT    NOT NULL
+        match_key    TEXT    NOT NULL,
+        cover        TEXT    -- CoverSource, NULL when there is no cover.jpg
     );
     CREATE INDEX books_match_key ON books (match_key);
 
@@ -115,6 +116,14 @@ impl Database {
         self.conn.execute(
             "UPDATE books SET path = ?1 WHERE id = ?2",
             params![path, id.0],
+        )?;
+        Ok(())
+    }
+
+    pub fn set_cover_source(&self, id: BookId, source: Option<CoverSource>) -> Result<()> {
+        self.conn.execute(
+            "UPDATE books SET cover = ?1 WHERE id = ?2",
+            params![source.map(CoverSource::as_str), id.0],
         )?;
         Ok(())
     }
@@ -220,7 +229,7 @@ impl Database {
             .conn
             .prepare(
                 "SELECT id, title, series, series_index, publisher, published, language,
-                        isbn, description, date_added, path
+                        isbn, description, date_added, path, cover
                  FROM books WHERE ?1 IS NULL OR id = ?1
                  ORDER BY date_added DESC, id DESC",
             )?
@@ -240,6 +249,10 @@ impl Database {
                     },
                     date_added: row.get(9)?,
                     path: row.get(10)?,
+                    cover: row
+                        .get::<_, Option<String>>(11)?
+                        .as_deref()
+                        .and_then(CoverSource::parse),
                     formats: Vec::new(),
                 })
             })?
@@ -406,6 +419,7 @@ mod tests {
         assert_eq!(book.metadata, dune());
         assert_eq!(book.date_added, 1_700_000_000);
         assert_eq!(book.path, "Frank Herbert/Dune (1)");
+        assert_eq!(book.cover, None);
         assert_eq!(
             book.formats,
             vec![
@@ -444,6 +458,16 @@ mod tests {
             .map(|a| a.name.as_str())
             .collect();
         assert_eq!(names, ["Terry Pratchett", "Neil Gaiman"]);
+    }
+
+    #[test]
+    fn cover_source_round_trips() {
+        let db = Database::open_in_memory().unwrap();
+        let id = db.insert_book(&dune(), 1).unwrap();
+        for source in [Some(CoverSource::Pdf), Some(CoverSource::User), None] {
+            db.set_cover_source(id, source).unwrap();
+            assert_eq!(db.book(id).unwrap().unwrap().cover, source);
+        }
     }
 
     #[test]
