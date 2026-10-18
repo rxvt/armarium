@@ -1,0 +1,143 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $ArmariumMetadataDialog: Adw.Dialog {
+  title: _("Edit Metadata");
+  content-width: 520;
+  content-height: 720;
+
+  child: Adw.ToastOverlay toast_overlay {
+    child: Adw.ToolbarView {
+      [top]
+      Adw.HeaderBar {
+        show-start-title-buttons: false;
+        show-end-title-buttons: false;
+
+        [start]
+        Gtk.Button {
+          label: _("_Cancel");
+          use-underline: true;
+          clicked => $on_cancel() swapped;
+        }
+
+        [end]
+        Gtk.Button save_button {
+          label: _("_Save");
+          use-underline: true;
+
+          styles [
+            "suggested-action",
+          ]
+        }
+      }
+
+      content: Adw.PreferencesPage {
+        Adw.PreferencesGroup {
+          Gtk.Box {
+            orientation: horizontal;
+            spacing: 18;
+            halign: center;
+
+            Gtk.Picture cover_picture {
+              content-fit: cover;
+              can-shrink: true;
+              width-request: 80;
+              height-request: 120;
+              overflow: hidden;
+
+              styles [
+                "cover",
+                "cover-placeholder",
+              ]
+            }
+
+            Gtk.Button {
+              label: _("_Replace Cover…");
+              use-underline: true;
+              valign: center;
+              clicked => $on_replace_cover() swapped;
+            }
+          }
+        }
+
+        Adw.PreferencesGroup {
+          Adw.EntryRow title_row {
+            title: _("Title");
+          }
+        }
+
+        Adw.PreferencesGroup authors_group {
+          title: _("Authors");
+
+          header-suffix: Gtk.Button {
+            icon-name: "list-add-symbolic";
+            tooltip-text: _("Add Author");
+            valign: center;
+            clicked => $on_add_author() swapped;
+
+            styles [
+              "flat",
+            ]
+          };
+
+          Gtk.ListBox authors_list {
+            selection-mode: none;
+
+            styles [
+              "boxed-list",
+            ]
+          }
+        }
+
+        Adw.PreferencesGroup {
+          title: _("Series");
+
+          Adw.EntryRow series_row {
+            title: _("Series");
+          }
+
+          Adw.EntryRow series_index_row {
+            title: _("Number in Series");
+          }
+        }
+
+        Adw.PreferencesGroup {
+          title: _("Publication");
+
+          Adw.EntryRow publisher_row {
+            title: _("Publisher");
+          }
+
+          Adw.EntryRow published_row {
+            title: _("Published");
+          }
+
+          Adw.EntryRow language_row {
+            title: _("Language");
+          }
+
+          Adw.EntryRow isbn_row {
+            title: _("ISBN");
+          }
+        }
+
+        Adw.PreferencesGroup {
+          title: _("Description");
+
+          Gtk.TextView description_view {
+            wrap-mode: word_char;
+            height-request: 120;
+            top-margin: 12;
+            bottom-margin: 12;
+            left-margin: 12;
+            right-margin: 12;
+
+            styles [
+              "card",
+            ]
+          }
+        }
+      };
+    };
+  };
+}

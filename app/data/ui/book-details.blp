@@ -43,6 +43,17 @@ template $ArmariumBookDetails: Adw.Bin {
         }
       }
 
+      Gtk.Button {
+        label: _("_Edit…");
+        use-underline: true;
+        halign: center;
+        action-name: "win.edit";
+
+        styles [
+          "pill",
+        ]
+      }
+
       Adw.PreferencesGroup {
         title: _("Formats");
 

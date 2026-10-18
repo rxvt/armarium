@@ -12,13 +12,14 @@ use adw::prelude::*;
 use adw::subclass::prelude::*;
 use armarium_core::Library;
 use armarium_core::import::{ImportReport, Outcome};
-use armarium_core::model::{Book, BookId, Format, FormatKind};
+use armarium_core::model::{Book, BookId, Format, FormatKind, Metadata};
 use gtk::{gdk, gio, glib};
 
 use crate::book_details::BookDetails;
 use crate::book_list;
 use crate::book_object::BookObject;
 use crate::book_tile::BookTile;
+use crate::metadata_dialog::MetadataDialog;
 use crate::thumbnails::Thumbnails;
 
 const DEFAULT_COVER_WIDTH: i32 = 160;
@@ -89,6 +90,7 @@ mod imp {
                 },
             );
             klass.install_action("win.show-in-files", None, |win, _, _| win.show_in_files());
+            klass.install_action("win.edit", None, |win, _, _| win.edit_selected());
             klass.install_action("win.delete", None, |win, _, _| win.confirm_delete_books());
             klass.install_action(
                 "win.delete-format",
@@ -229,7 +231,12 @@ impl Window {
             imp.details.show(&book, cover, &thumbnails);
         }
         imp.split_view.set_show_sidebar(single.is_some());
-        for action in ["win.open-format", "win.show-in-files", "win.delete-format"] {
+        for action in [
+            "win.open-format",
+            "win.show-in-files",
+            "win.edit",
+            "win.delete-format",
+        ] {
             self.action_set_enabled(action, single.is_some());
         }
         self.action_set_enabled("win.delete", count > 0);
@@ -737,9 +744,10 @@ impl Window {
                 );
             }
             menu.append_section(None, &open);
-            let files = gio::Menu::new();
-            files.append(Some("Show in Files"), Some("win.show-in-files"));
-            menu.append_section(None, &files);
+            let book = gio::Menu::new();
+            book.append(Some("Edit Metadata…"), Some("win.edit"));
+            book.append(Some("Show in Files"), Some("win.show-in-files"));
+            menu.append_section(None, &book);
         }
         let delete = gio::Menu::new();
         let label = match books.len() {
@@ -760,6 +768,56 @@ impl Window {
             glib::idle_add_local_once(move || popover.unparent());
         });
         popover.popup();
+    }
+
+    fn edit_selected(&self) {
+        let Some(obj) = self.selected_book() else {
+            return;
+        };
+        let book = obj.book();
+        let cover = self.with_library(|lib| lib.cover_path(&book)).flatten();
+        let thumbnails = self.imp().thumbnails.borrow().clone().unwrap();
+        let id = book.id;
+        let on_save = Box::new(glib::clone!(
+            #[weak(rename_to = win)]
+            self,
+            #[upgrade_or_else]
+            || Ok(()),
+            move |metadata, cover| win.save_metadata(id, metadata, cover)
+        ));
+        MetadataDialog::new(&book, cover, &thumbnails, on_save).present(Some(self));
+    }
+
+    /// Saves edited Metadata and, if given, a new Cover, then reloads.
+    fn save_metadata(
+        &self,
+        id: BookId,
+        metadata: Metadata,
+        cover: Option<PathBuf>,
+    ) -> Result<(), String> {
+        let result = self.with_library_mut(|lib| {
+            let book = lib.update_metadata(id, metadata)?;
+            if let Some(image) = &cover {
+                lib.set_cover(id, image)?;
+            }
+            Ok::<_, armarium_core::Error>(lib.cover_path(&book))
+        });
+        // The Cover keeps its path, so drop the old texture from memory.
+        if let Some(Ok(Some(path))) = &result
+            && cover.is_some()
+        {
+            self.imp()
+                .thumbnails
+                .borrow()
+                .as_ref()
+                .unwrap()
+                .forget(path);
+        }
+        self.reload();
+        match result {
+            Some(Err(e)) => Err(e.to_string()),
+            _ => Ok(()),
+        }
     }
 
     fn confirm_delete_books(&self) {

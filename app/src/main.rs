@@ -2,6 +2,7 @@ mod book_details;
 mod book_list;
 mod book_object;
 mod book_tile;
+mod metadata_dialog;
 mod thumbnails;
 mod window;
 
