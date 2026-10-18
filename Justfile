@@ -4,6 +4,10 @@
 # from the real ones.
 scratch := justfile_directory() / "target/scratch"
 
+# Where `just install` puts the app (binary in bin/, launcher in share/).
+prefix := env("PREFIX", env("HOME") / ".local")
+desktop := "io.github.rxvt.Armarium.desktop"
+
 # Sample books to import for manual testing (kept outside the repo).
 books := env("ARMARIUM_SAMPLE_BOOKS", "")
 
@@ -15,10 +19,22 @@ default:
 build:
     cargo build --workspace --all-targets
 
-# Run the app on the real Library (~/Books, or $ARMARIUM_LIBRARY)
+# Run a development build (its own settings, cache and Library under armarium-devel)
 [positional-arguments]
 run *args:
     cargo run -p armarium -- "$@"
+
+# Build a release and install it for this user, with an app launcher entry
+install:
+    cargo build --release -p armarium
+    install -Dm755 target/release/armarium {{ quote(prefix / "bin/armarium") }}
+    sed 's|^Exec=armarium$|Exec={{ prefix }}/bin/armarium|' app/data/{{ desktop }} \
+        | install -Dm644 /dev/stdin {{ quote(prefix / "share/applications" / desktop) }}
+    @echo "Installed {{ prefix }}/bin/armarium"
+
+# Remove what `just install` added (the Library and settings are kept)
+uninstall:
+    rm -f {{ quote(prefix / "bin/armarium") }} {{ quote(prefix / "share/applications" / desktop) }}
 
 # Run every automated test: Rust crates and the cooldown script
 test:

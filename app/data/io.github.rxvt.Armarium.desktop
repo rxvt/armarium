@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Armarium
+Comment=A personal library for DRM-free ebooks
+Exec=armarium
+Icon=accessories-dictionary
+Terminal=false
+Categories=Office;Viewer;
+Keywords=ebook;book;library;epub;pdf;
+StartupNotify=true
+StartupWMClass=io.github.rxvt.Armarium

@@ -3,6 +3,7 @@ mod book_list;
 mod book_object;
 mod book_tile;
 mod metadata_dialog;
+mod profile;
 mod settings;
 mod thumbnails;
 mod window;
@@ -10,13 +11,11 @@ mod window;
 use adw::prelude::*;
 use gtk::{gio, glib};
 
-const APP_ID: &str = "io.github.rxvt.Armarium";
-
 fn main() -> glib::ExitCode {
     gio::resources_register_include!("armarium.gresource").expect("bundled resources are valid");
 
     let app = adw::Application::builder()
-        .application_id(APP_ID)
+        .application_id(profile::APP_ID)
         .resource_base_path("/io/github/rxvt/Armarium")
         .build();
     app.connect_startup(setup_actions);

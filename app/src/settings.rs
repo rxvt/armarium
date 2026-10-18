@@ -1,11 +1,13 @@
 //! Preferences remembered across sessions, in a GLib key file at
-//! `~/.config/armarium/settings.ini` (or `$ARMARIUM_SETTINGS`, for trying the
+//! `~/.config/armarium/settings.ini` (`armarium-devel` in debug builds) (or `$ARMARIUM_SETTINGS`, for trying the
 //! app without touching it). A missing or unreadable file means defaults; the
 //! app never fails to start over it.
 
 use std::path::PathBuf;
 
 use gtk::glib;
+
+use crate::profile;
 
 const GROUP: &str = "armarium";
 
@@ -18,11 +20,7 @@ impl Settings {
     pub fn load() -> Settings {
         let path = std::env::var_os("ARMARIUM_SETTINGS")
             .map(PathBuf::from)
-            .unwrap_or_else(|| {
-                glib::user_config_dir()
-                    .join("armarium")
-                    .join("settings.ini")
-            });
+            .unwrap_or_else(|| profile::config_dir().join("settings.ini"));
         let file = glib::KeyFile::new();
         if path.exists()
             && let Err(e) = file.load_from_file(&path, glib::KeyFileFlags::KEEP_COMMENTS)

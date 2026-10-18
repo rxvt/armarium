@@ -20,6 +20,7 @@ use crate::book_list;
 use crate::book_object::BookObject;
 use crate::book_tile::BookTile;
 use crate::metadata_dialog::MetadataDialog;
+use crate::profile;
 use crate::settings::Settings;
 use crate::thumbnails::Thumbnails;
 
@@ -149,6 +150,10 @@ mod imp {
                 self.view_toggle.set_active_name(Some(&view));
             }
             let _ = self.settings.set(settings);
+            if profile::DEVEL {
+                obj.add_css_class("devel");
+                obj.set_title(Some("Armarium (Development)"));
+            }
             self.thumbnails.replace(Some(Rc::new(Thumbnails::new())));
             obj.setup_models();
             obj.setup_grid();
@@ -182,12 +187,13 @@ impl Window {
     }
 
     /// `$ARMARIUM_LIBRARY` (for trying the app on a scratch Library), else
-    /// the folder chosen in Preferences, else `~/Books`.
+    /// the folder chosen in Preferences, else the default Library (`~/Books`
+    /// for the installed app).
     fn library_root(&self) -> PathBuf {
         std::env::var_os("ARMARIUM_LIBRARY")
             .map(PathBuf::from)
             .or_else(|| self.settings().library())
-            .unwrap_or_else(|| glib::home_dir().join("Books"))
+            .unwrap_or_else(profile::default_library)
     }
 
     fn store(&self) -> gio::ListStore {

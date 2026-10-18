@@ -1,5 +1,5 @@
 //! Cover thumbnails for the grid: scaled copies of each `cover.jpg` cached
-//! under `~/.cache/armarium/thumbnails` (rebuildable), loaded off the main
+//! under `~/.cache/armarium/thumbnails` (`armarium-devel` in debug builds) (rebuildable), loaded off the main
 //! thread and kept in a small in-memory cache.
 
 use std::cell::RefCell;
@@ -9,7 +9,9 @@ use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use armarium_core::cover;
-use gtk::{gdk, gio, glib};
+use gtk::{gdk, gio};
+
+use crate::profile;
 
 /// Longest side of a cached thumbnail; enough for the largest tile at 2× scale.
 const THUMB_MAX_SIDE: u32 = 720;
@@ -24,7 +26,7 @@ pub struct Thumbnails {
 impl Thumbnails {
     pub fn new() -> Thumbnails {
         Thumbnails {
-            dir: glib::user_cache_dir().join("armarium").join("thumbnails"),
+            dir: profile::cache_dir().join("thumbnails"),
             memory: RefCell::default(),
         }
     }
