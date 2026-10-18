@@ -1,0 +1,7 @@
+# Cooldown: ignore any crate version published less than 7 days ago.
+# Requires Cargo 1.100+; see docs/v1-plan.md#cooldown-nothing-younger-than-7-days.
+[registry]
+global-min-publish-age = "7 days"
+
+[resolver]
+incompatible-publish-age = "deny"

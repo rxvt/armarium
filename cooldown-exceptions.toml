@@ -1,0 +1,9 @@
+# Crate versions allowed into Cargo.lock before they are 7 days old.
+# Only for genuine emergencies (e.g. a security fix). Remove entries once the
+# cooldown check says they are old enough. Example:
+#
+# [[exception]]
+# crate = "foo"
+# version = "1.2.4"
+# reason = "RUSTSEC-2026-0123 fix"
+# added = "2026-10-18"

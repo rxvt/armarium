@@ -1,0 +1,10 @@
+[package]
+name = "armarium"
+description = "A personal ebook library for DRM-free books."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+armarium-core = { path = "../core" }

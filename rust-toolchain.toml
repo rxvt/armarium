@@ -1,0 +1,6 @@
+# Pinned nightly until Rust 1.100.0 is a week old (~2026-11-19), then "1.100.0".
+# See docs/v1-plan.md#toolchain.
+[toolchain]
+channel = "nightly-2026-10-08"
+profile = "minimal"
+components = ["rustfmt", "clippy", "rust-src", "rust-analyzer"]
