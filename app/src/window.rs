@@ -1,4 +1,4 @@
-//! The main window: header bar, cover grid, Import and opening Books.
+//! The main window: header bar, cover grid and list, Import and opening Books.
 
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
@@ -13,6 +13,7 @@ use armarium_core::import::{ImportReport, Outcome};
 use armarium_core::model::FormatKind;
 use gtk::{gdk, gio, glib};
 
+use crate::book_list;
 use crate::book_object::BookObject;
 use crate::book_tile::BookTile;
 use crate::thumbnails::Thumbnails;
@@ -33,6 +34,10 @@ mod imp {
         pub stack: TemplateChild<gtk::Stack>,
         #[template_child]
         pub grid_view: TemplateChild<gtk::GridView>,
+        #[template_child]
+        pub column_view: TemplateChild<gtk::ColumnView>,
+        #[template_child]
+        pub view_toggle: TemplateChild<adw::ToggleGroup>,
         #[template_child]
         pub progress_bar: TemplateChild<gtk::ProgressBar>,
 
@@ -80,6 +85,7 @@ mod imp {
             self.thumbnails.replace(Some(Rc::new(Thumbnails::new())));
             obj.setup_models();
             obj.setup_grid();
+            obj.setup_list();
             obj.setup_search();
             obj.setup_drop();
             obj.open_library(default_library_root());
@@ -134,8 +140,11 @@ impl Window {
             self,
             move |_, _, _, _| win.update_page()
         ));
-        let selection = gtk::MultiSelection::new(Some(filtered.clone()));
+        // The list's column headers choose the order for both views.
+        let sorted = gtk::SortListModel::new(Some(filtered.clone()), imp.column_view.sorter());
+        let selection = gtk::MultiSelection::new(Some(sorted));
         imp.grid_view.set_model(Some(&selection));
+        imp.column_view.set_model(Some(&selection));
 
         imp.store.replace(Some(store));
         imp.filter.replace(Some(filter));
@@ -187,15 +196,32 @@ impl Window {
         grid.connect_activate(glib::clone!(
             #[weak(rename_to = win)]
             self,
-            move |grid, position| {
-                if let Some(obj) = grid
-                    .model()
-                    .and_then(|m| m.item(position))
-                    .and_downcast::<BookObject>()
-                {
-                    win.open_book(&obj);
-                }
-            }
+            move |grid, position| win.open_at(grid.model(), position)
+        ));
+    }
+
+    fn setup_list(&self) {
+        let imp = self.imp();
+        let thumbnails = imp.thumbnails.borrow().clone().unwrap();
+        let cover_path: book_list::CoverPath = Rc::new(glib::clone!(
+            #[weak(rename_to = win)]
+            self,
+            #[upgrade_or]
+            None,
+            move |book| win.with_library(|lib| lib.cover_path(book)).flatten()
+        ));
+        let date_added = book_list::add_columns(&imp.column_view, thumbnails, cover_path);
+        imp.column_view
+            .sort_by_column(Some(&date_added), gtk::SortType::Descending);
+        imp.column_view.connect_activate(glib::clone!(
+            #[weak(rename_to = win)]
+            self,
+            move |view, position| win.open_at(view.model(), position)
+        ));
+        imp.view_toggle.connect_active_name_notify(glib::clone!(
+            #[weak(rename_to = win)]
+            self,
+            move |_| win.update_page()
         ));
     }
 
@@ -271,7 +297,10 @@ impl Window {
         let page = match (total, shown) {
             (0, _) => "empty",
             (_, 0) => "no-results",
-            _ => "grid",
+            _ => &imp
+                .view_toggle
+                .active_name()
+                .unwrap_or_else(|| "grid".into()),
         };
         imp.stack.set_visible_child_name(page);
     }
@@ -465,6 +494,15 @@ impl Window {
             .build();
         dialog.add_response("close", "_Close");
         dialog.present(Some(self));
+    }
+
+    fn open_at(&self, model: Option<gtk::SelectionModel>, position: u32) {
+        if let Some(obj) = model
+            .and_then(|m| m.item(position))
+            .and_downcast::<BookObject>()
+        {
+            self.open_book(&obj);
+        }
     }
 
     /// Opens the Book's EPUB if it has one, else its PDF, in the default Reader.

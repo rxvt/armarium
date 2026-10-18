@@ -1,5 +1,7 @@
 //! The Library's domain types. See GLOSSARY.md for the vocabulary.
 
+use std::cmp::Ordering;
+
 use crate::text;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -159,6 +161,73 @@ impl Book {
         parts.extend(m.series.as_deref());
         text::fold(&parts.join("\n"))
     }
+
+    pub fn sort_keys(&self) -> SortKeys {
+        let m = &self.metadata;
+        let authors: Vec<&str> = m.authors.iter().map(|a| a.sort_name.as_str()).collect();
+        let formats: Vec<&str> = self.formats.iter().map(|f| f.kind.label()).collect();
+        SortKeys {
+            id: self.id.0,
+            title: text::title_sort_key(&m.title),
+            authors: text::fold(&authors.join("\u{1f}")),
+            series: m
+                .series
+                .as_deref()
+                .map(|s| (text::title_sort_key(s), m.series_index.unwrap_or(0.0))),
+            formats: formats.join(" "),
+            date_added: self.date_added,
+        }
+    }
+}
+
+/// The orders the Book list can be sorted in. Each compares ascending; the
+/// UI reverses it for descending.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SortKey {
+    Title,
+    Authors,
+    Series,
+    Formats,
+    DateAdded,
+}
+
+/// A Book's sort keys, computed once so that sorting a large Library does
+/// not fold text on every comparison. From [`Book::sort_keys`].
+#[derive(Debug, Clone, Default)]
+pub struct SortKeys {
+    id: i64,
+    title: String,
+    authors: String,
+    /// Books outside a series sort after those in one.
+    series: Option<(String, f64)>,
+    formats: String,
+    date_added: i64,
+}
+
+impl SortKeys {
+    /// Compares by `key`, then by title, then by id, so the order is total.
+    /// Date added ties go straight to the id, i.e. Import order, since a
+    /// whole Import usually lands in the same second.
+    pub fn compare(&self, other: &SortKeys, key: SortKey) -> Ordering {
+        let primary = match key {
+            SortKey::Title => Ordering::Equal,
+            SortKey::Authors => self.authors.cmp(&other.authors),
+            SortKey::Series => match (&self.series, &other.series) {
+                (Some((a, i)), Some((b, j))) => a.cmp(b).then(i.total_cmp(j)),
+                (Some(_), None) => Ordering::Less,
+                (None, Some(_)) => Ordering::Greater,
+                (None, None) => Ordering::Equal,
+            },
+            SortKey::Formats => self.formats.cmp(&other.formats),
+            SortKey::DateAdded => self
+                .date_added
+                .cmp(&other.date_added)
+                .then(self.id.cmp(&other.id)),
+        };
+        primary
+            .then_with(|| self.title.cmp(&other.title))
+            .then(self.id.cmp(&other.id))
+    }
 }
 
 /// Whether `search_text` (from [`Book::search_text`]) matches `query`: every
@@ -206,6 +275,83 @@ mod tests {
         assert!(search_matches(&text, "classics"));
         assert!(!search_matches(&text, "smith"), "publisher is not searched");
         assert!(!search_matches(&text, "eyre emily"));
+    }
+
+    fn book(id: i64, title: &str, author: &str) -> Book {
+        Book {
+            id: BookId(id),
+            metadata: Metadata {
+                title: title.into(),
+                authors: vec![Author::new(author)],
+                ..Default::default()
+            },
+            date_added: 0,
+            path: String::new(),
+            cover: None,
+            formats: Vec::new(),
+        }
+    }
+
+    fn sorted_titles(books: &[Book], key: SortKey) -> Vec<String> {
+        let mut keyed: Vec<(SortKeys, &str)> = books
+            .iter()
+            .map(|b| (b.sort_keys(), b.metadata.title.as_str()))
+            .collect();
+        keyed.sort_by(|a, b| a.0.compare(&b.0, key));
+        keyed.into_iter().map(|(_, t)| t.to_owned()).collect()
+    }
+
+    #[test]
+    fn sorts_titles_ignoring_articles_and_accents() {
+        let books = [
+            book(1, "The Hobbit", "J. R. R. Tolkien"),
+            book(2, "Émile", "Jean-Jacques Rousseau"),
+            book(3, "Dune", "Frank Herbert"),
+        ];
+        assert_eq!(
+            sorted_titles(&books, SortKey::Title),
+            ["Dune", "Émile", "The Hobbit"]
+        );
+    }
+
+    #[test]
+    fn sorts_authors_by_sort_name_then_title() {
+        let books = [
+            book(1, "Persuasion", "Jane Austen"),
+            book(2, "Dune", "Frank Herbert"),
+            book(3, "Emma", "Jane Austen"),
+        ];
+        assert_eq!(
+            sorted_titles(&books, SortKey::Authors),
+            ["Emma", "Persuasion", "Dune"]
+        );
+    }
+
+    #[test]
+    fn sorts_series_by_name_then_numeric_index_with_no_series_last() {
+        let mut books = [
+            book(1, "Standalone", "A"),
+            book(2, "Tenth", "A"),
+            book(3, "Second", "A"),
+            book(4, "Other", "A"),
+        ];
+        for (i, series, index) in [(1, "Alpha", 10.0), (2, "Alpha", 2.0), (3, "Beta", 1.0)] {
+            books[i].metadata.series = Some(series.into());
+            books[i].metadata.series_index = Some(index);
+        }
+        assert_eq!(
+            sorted_titles(&books, SortKey::Series),
+            ["Second", "Tenth", "Other", "Standalone"]
+        );
+    }
+
+    #[test]
+    fn sorts_date_added_with_ties_in_import_order() {
+        let mut books = [book(1, "B", "X"), book(2, "A", "X"), book(3, "C", "X")];
+        books[0].date_added = 5;
+        books[1].date_added = 5;
+        books[2].date_added = 1;
+        assert_eq!(sorted_titles(&books, SortKey::DateAdded), ["C", "B", "A"]);
     }
 
     #[test]

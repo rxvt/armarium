@@ -1,0 +1,168 @@
+//! The list view's columns: Cover, Title, Authors, Series, Formats and Date
+//! added, each sortable.
+
+use std::path::PathBuf;
+use std::rc::Rc;
+
+use armarium_core::model::{Book, SortKey};
+use gtk::glib;
+use gtk::prelude::*;
+
+use crate::book_object::BookObject;
+use crate::book_tile::authors_line;
+use crate::thumbnails::Thumbnails;
+
+/// Finds a Book's `cover.jpg`, which needs the window's Library.
+pub type CoverPath = Rc<dyn Fn(&Book) -> Option<PathBuf>>;
+
+const COVER_WIDTH: i32 = 32;
+
+/// Adds the columns to `view` and returns the Date added column, which the
+/// list starts sorted by.
+pub fn add_columns(
+    view: &gtk::ColumnView,
+    thumbnails: Rc<Thumbnails>,
+    cover_path: CoverPath,
+) -> gtk::ColumnViewColumn {
+    view.append_column(&cover_column(thumbnails, cover_path));
+    let title = text_column("Title", SortKey::Title, |b| b.metadata.title.clone());
+    title.set_expand(true);
+    view.append_column(&title);
+    let authors = text_column("Authors", SortKey::Authors, authors_line);
+    authors.set_expand(true);
+    view.append_column(&authors);
+    view.append_column(&text_column("Series", SortKey::Series, series_line));
+    view.append_column(&text_column("Formats", SortKey::Formats, formats_line));
+    let date = text_column("Date Added", SortKey::DateAdded, date_line);
+    view.append_column(&date);
+    date
+}
+
+fn sorter(key: SortKey) -> gtk::CustomSorter {
+    gtk::CustomSorter::new(move |a, b| {
+        let (Some(a), Some(b)) = (
+            a.downcast_ref::<BookObject>(),
+            b.downcast_ref::<BookObject>(),
+        ) else {
+            return gtk::Ordering::Equal;
+        };
+        a.compare(b, key).into()
+    })
+}
+
+fn text_column(
+    title: &str,
+    key: SortKey,
+    text: impl Fn(&Book) -> String + 'static,
+) -> gtk::ColumnViewColumn {
+    let factory = gtk::SignalListItemFactory::new();
+    factory.connect_setup(|_, cell| {
+        let label = gtk::Label::builder()
+            .xalign(0.0)
+            .ellipsize(gtk::pango::EllipsizeMode::End)
+            .build();
+        cell.downcast_ref::<gtk::ColumnViewCell>()
+            .unwrap()
+            .set_child(Some(&label));
+    });
+    factory.connect_bind(move |_, cell| {
+        let cell = cell.downcast_ref::<gtk::ColumnViewCell>().unwrap();
+        let (Some(label), Some(obj)) = (
+            cell.child().and_downcast::<gtk::Label>(),
+            cell.item().and_downcast::<BookObject>(),
+        ) else {
+            return;
+        };
+        let text = text(&obj.book());
+        label.set_tooltip_text(Some(&text));
+        label.set_label(&text);
+    });
+    let column = gtk::ColumnViewColumn::new(Some(title), Some(factory));
+    column.set_resizable(true);
+    column.set_sorter(Some(&sorter(key)));
+    column
+}
+
+fn cover_column(thumbnails: Rc<Thumbnails>, cover_path: CoverPath) -> gtk::ColumnViewColumn {
+    let factory = gtk::SignalListItemFactory::new();
+    factory.connect_setup(|_, cell| {
+        let picture = gtk::Picture::builder()
+            .content_fit(gtk::ContentFit::Cover)
+            .can_shrink(true)
+            .width_request(COVER_WIDTH)
+            .height_request(COVER_WIDTH * 3 / 2)
+            .halign(gtk::Align::Center)
+            .overflow(gtk::Overflow::Hidden)
+            .css_classes(["cover", "list-cover"])
+            .build();
+        cell.downcast_ref::<gtk::ColumnViewCell>()
+            .unwrap()
+            .set_child(Some(&picture));
+    });
+    factory.connect_bind(move |_, cell| {
+        let cell = cell.downcast_ref::<gtk::ColumnViewCell>().unwrap();
+        let (Some(picture), Some(obj)) = (
+            cell.child().and_downcast::<gtk::Picture>(),
+            cell.item().and_downcast::<BookObject>(),
+        ) else {
+            return;
+        };
+        picture.set_paintable(gtk::gdk::Paintable::NONE);
+        picture.add_css_class("cover-placeholder");
+        let Some(cover) = cover_path(&obj.book()) else {
+            return;
+        };
+        let cell = cell.downgrade();
+        let thumbnails = thumbnails.clone();
+        glib::spawn_future_local(async move {
+            let texture = thumbnails.load(cover).await;
+            // Drop the result if the row has since been reused for another Book.
+            if let Some(cell) = cell.upgrade()
+                && cell.item().as_ref() == Some(obj.upcast_ref())
+                && let Some(texture) = texture
+            {
+                picture.set_paintable(Some(&texture));
+                picture.remove_css_class("cover-placeholder");
+            }
+        });
+    });
+    factory.connect_unbind(|_, cell| {
+        if let Some(picture) = cell
+            .downcast_ref::<gtk::ColumnViewCell>()
+            .unwrap()
+            .child()
+            .and_downcast::<gtk::Picture>()
+        {
+            picture.set_paintable(gtk::gdk::Paintable::NONE);
+        }
+    });
+    let column = gtk::ColumnViewColumn::new(None, Some(factory));
+    column.set_fixed_width(COVER_WIDTH + 24);
+    column
+}
+
+/// "Dune 2", "Discworld 1.5", or "" outside a series.
+fn series_line(book: &Book) -> String {
+    let m = &book.metadata;
+    match (&m.series, m.series_index) {
+        (Some(series), Some(index)) => format!("{series} {index}"),
+        (Some(series), None) => series.clone(),
+        (None, _) => String::new(),
+    }
+}
+
+fn formats_line(book: &Book) -> String {
+    book.formats
+        .iter()
+        .map(|f| f.kind.label())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// The date in the user's locale format.
+fn date_line(book: &Book) -> String {
+    glib::DateTime::from_unix_local(book.date_added)
+        .and_then(|d| d.format("%x"))
+        .map(String::from)
+        .unwrap_or_default()
+}

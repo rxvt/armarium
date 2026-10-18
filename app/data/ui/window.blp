@@ -32,6 +32,27 @@ template $ArmariumWindow: Adw.ApplicationWindow {
           primary: true;
           tooltip-text: _("Main Menu");
         }
+
+        [end]
+        Adw.ToggleGroup view_toggle {
+          active-name: "grid";
+
+          Adw.Toggle {
+            name: "grid";
+            icon-name: "view-grid-symbolic";
+            tooltip: _("Grid View");
+          }
+
+          Adw.Toggle {
+            name: "list";
+            icon-name: "view-list-symbolic";
+            tooltip: _("List View");
+          }
+
+          styles [
+            "flat",
+          ]
+        }
       }
 
       content: Gtk.Overlay {
@@ -82,6 +103,21 @@ template $ArmariumWindow: Adw.ApplicationWindow {
 
                 styles [
                   "book-grid",
+                ]
+              };
+            };
+          }
+
+          Gtk.StackPage {
+            name: "list";
+
+            child: Gtk.ScrolledWindow {
+              child: Gtk.ColumnView column_view {
+                reorderable: false;
+                show-row-separators: true;
+
+                styles [
+                  "book-list",
                 ]
               };
             };

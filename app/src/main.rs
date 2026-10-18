@@ -1,3 +1,4 @@
+mod book_list;
 mod book_object;
 mod book_tile;
 mod thumbnails;

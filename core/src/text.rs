@@ -35,6 +35,18 @@ pub fn match_key(s: &str) -> String {
     out
 }
 
+/// Key for sorting titles: folded, with a leading English article dropped
+/// ("The Hobbit" sorts under H).
+pub fn title_sort_key(title: &str) -> String {
+    let folded = fold(title.trim());
+    for article in ["the ", "a ", "an "] {
+        if let Some(rest) = folded.strip_prefix(article) {
+            return rest.trim_start().to_owned();
+        }
+    }
+    folded
+}
+
 /// Derives an author's sort name: "Frank Herbert" → "Herbert, Frank",
 /// "Martin Luther King Jr." → "King, Martin Luther, Jr.". Names that already
 /// contain a comma, or are a single word, are returned unchanged.
@@ -135,6 +147,22 @@ mod tests {
         );
         assert_eq!(match_key("  Brontë, Charlotte. "), "bronte charlotte");
         assert_eq!(match_key("!!!"), "");
+    }
+
+    #[test]
+    fn title_sort_key_drops_leading_article() {
+        assert_eq!(title_sort_key("The Hobbit"), "hobbit");
+        assert_eq!(
+            title_sort_key("  A Tale of Two Cities"),
+            "tale of two cities"
+        );
+        assert_eq!(title_sort_key("An Ödyssey"), "odyssey");
+        assert_eq!(
+            title_sort_key("Theory of Everything"),
+            "theory of everything"
+        );
+        assert_eq!(title_sort_key("Anathem"), "anathem");
+        assert_eq!(title_sort_key("The"), "the");
     }
 
     #[test]
