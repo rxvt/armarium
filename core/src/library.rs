@@ -10,10 +10,14 @@ use crate::naming;
 
 pub const DB_FILE_NAME: &str = "library.db";
 
+/// Moves a file or folder to the Trash.
+pub type TrashFn = Box<dyn Fn(&Path) -> std::io::Result<()> + Send>;
+
 pub struct Library {
     root: PathBuf,
     /// `None` until the first Import creates the Library.
     pub(crate) db: Option<Database>,
+    pub(crate) trash: TrashFn,
 }
 
 impl Library {
@@ -27,7 +31,11 @@ impl Library {
         } else {
             None
         };
-        Ok(Library { root, db })
+        Ok(Library {
+            root,
+            db,
+            trash: Box::new(trash_with_gio),
+        })
     }
 
     pub fn root(&self) -> &Path {
@@ -70,4 +78,11 @@ impl Library {
         }
         Ok(self.db.as_ref().unwrap())
     }
+}
+
+fn trash_with_gio(path: &Path) -> std::io::Result<()> {
+    use gio::prelude::FileExt;
+    gio::File::for_path(path)
+        .trash(gio::Cancellable::NONE)
+        .map_err(|e| std::io::Error::other(e.message().to_owned()))
 }

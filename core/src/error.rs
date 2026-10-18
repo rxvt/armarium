@@ -10,6 +10,9 @@ pub enum Error {
     /// A Format file that cannot be read as its type, with a short reason
     /// suitable for the Import summary.
     Unreadable(String),
+    /// A request that cannot be carried out, such as an empty title or an
+    /// unknown Book.
+    Invalid(String),
 }
 
 impl fmt::Display for Error {
@@ -17,7 +20,7 @@ impl fmt::Display for Error {
         match self {
             Error::Io(e) => write!(f, "{e}"),
             Error::Database(e) => write!(f, "database error: {e}"),
-            Error::Unreadable(reason) => f.write_str(reason),
+            Error::Unreadable(reason) | Error::Invalid(reason) => f.write_str(reason),
         }
     }
 }
@@ -27,7 +30,7 @@ impl std::error::Error for Error {
         match self {
             Error::Io(e) => Some(e),
             Error::Database(e) => Some(e),
-            Error::Unreadable(_) => None,
+            Error::Unreadable(_) | Error::Invalid(_) => None,
         }
     }
 }

@@ -2,6 +2,7 @@
 
 mod cover;
 pub mod db;
+mod edit;
 mod error;
 pub mod extract;
 #[cfg(test)]

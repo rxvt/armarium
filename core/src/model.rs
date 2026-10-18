@@ -149,6 +149,25 @@ impl Book {
     pub fn format(&self, kind: FormatKind) -> Option<&Format> {
         self.formats.iter().find(|f| f.kind == kind)
     }
+
+    /// Text that live search looks in: title, authors and series, folded with
+    /// [`text::fold`]. Compute once per Book and reuse while the user types.
+    pub fn search_text(&self) -> String {
+        let m = &self.metadata;
+        let mut parts = vec![m.title.as_str()];
+        parts.extend(m.authors.iter().map(|a| a.name.as_str()));
+        parts.extend(m.series.as_deref());
+        text::fold(&parts.join("\n"))
+    }
+}
+
+/// Whether `search_text` (from [`Book::search_text`]) matches `query`: every
+/// whitespace-separated word of the query must occur in it, ignoring case and
+/// diacritics. An empty query matches everything.
+pub fn search_matches(search_text: &str, query: &str) -> bool {
+    text::fold(query)
+        .split_whitespace()
+        .all(|word| search_text.contains(word))
 }
 
 #[cfg(test)]
@@ -162,6 +181,31 @@ mod tests {
         }
         assert_eq!(FormatKind::from_extension("EPUB"), Some(FormatKind::Epub));
         assert_eq!(FormatKind::from_extension("mobi"), None);
+    }
+
+    #[test]
+    fn search_matches_every_word_across_fields_ignoring_accents() {
+        let book = Book {
+            id: BookId(1),
+            metadata: Metadata {
+                title: "Jane Eyre".into(),
+                authors: vec![Author::new("Charlotte Brontë")],
+                series: Some("Brontë Classics".into()),
+                publisher: Some("Smith, Elder".into()),
+                ..Default::default()
+            },
+            date_added: 0,
+            path: String::new(),
+            cover: None,
+            formats: Vec::new(),
+        };
+        let text = book.search_text();
+        assert!(search_matches(&text, ""));
+        assert!(search_matches(&text, "bronte"));
+        assert!(search_matches(&text, "  EYRE  charl "));
+        assert!(search_matches(&text, "classics"));
+        assert!(!search_matches(&text, "smith"), "publisher is not searched");
+        assert!(!search_matches(&text, "eyre emily"));
     }
 
     #[test]
