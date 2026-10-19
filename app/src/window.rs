@@ -64,6 +64,9 @@ mod imp {
         pub grid_factory: OnceCell<gtk::SignalListItemFactory>,
         pub settings: OnceCell<Settings>,
         pub importing: Cell<bool>,
+        /// Set when the details sidebar was toggled off, so changing the
+        /// selection leaves it closed.
+        pub details_hidden: Cell<bool>,
     }
 
     #[glib::object_subclass]
@@ -98,6 +101,7 @@ mod imp {
             );
             klass.install_action("win.show-in-files", None, |win, _, _| win.show_in_files());
             klass.install_action("win.edit", None, |win, _, _| win.edit_selected());
+            klass.install_action("win.toggle-details", None, |win, _, _| win.toggle_details());
             klass.install_action("win.preferences", None, |win, _, _| win.show_preferences());
             klass.add_binding_action(
                 gdk::Key::comma,
@@ -278,16 +282,24 @@ impl Window {
             let thumbnails = imp.thumbnails.borrow().clone().unwrap();
             imp.details.show(&book, cover, &thumbnails);
         }
-        imp.split_view.set_show_sidebar(single.is_some());
+        imp.split_view
+            .set_show_sidebar(single.is_some() && !imp.details_hidden.get());
         for action in [
             "win.open-format",
             "win.show-in-files",
             "win.edit",
+            "win.toggle-details",
             "win.delete-format",
         ] {
             self.action_set_enabled(action, single.is_some());
         }
         self.action_set_enabled("win.delete", count > 0);
+    }
+
+    fn toggle_details(&self) {
+        let imp = self.imp();
+        imp.details_hidden.set(!imp.details_hidden.get());
+        self.update_selection();
     }
 
     fn setup_grid(&self) {
@@ -358,7 +370,7 @@ impl Window {
             self,
             move |grid, position| win.open_at(grid.model(), position)
         ));
-        grid.add_controller(delete_shortcut());
+        grid.add_controller(view_shortcuts());
     }
 
     fn setup_list(&self) {
@@ -385,7 +397,7 @@ impl Window {
             self,
             move |view, position| win.open_at(view.model(), position)
         ));
-        imp.column_view.add_controller(delete_shortcut());
+        imp.column_view.add_controller(view_shortcuts());
         imp.view_toggle.connect_active_name_notify(glib::clone!(
             #[weak(rename_to = win)]
             self,
@@ -1057,17 +1069,19 @@ impl Window {
     }
 }
 
-/// Delete moves the selected Books to the Trash, from either view.
-fn delete_shortcut() -> gtk::ShortcutController {
-    let shortcut = gtk::Shortcut::new(
-        Some(gtk::KeyvalTrigger::new(
-            gdk::Key::Delete,
-            gdk::ModifierType::empty(),
-        )),
-        Some(gtk::NamedAction::new("win.delete")),
-    );
+/// Shortcuts on the selection in either view: Delete moves the selected
+/// Books to the Trash and I toggles the details sidebar.
+fn view_shortcuts() -> gtk::ShortcutController {
     let controller = gtk::ShortcutController::new();
-    controller.add_shortcut(shortcut);
+    for (key, action) in [
+        (gdk::Key::Delete, "win.delete"),
+        (gdk::Key::i, "win.toggle-details"),
+    ] {
+        controller.add_shortcut(gtk::Shortcut::new(
+            Some(gtk::KeyvalTrigger::new(key, gdk::ModifierType::empty())),
+            Some(gtk::NamedAction::new(action)),
+        ));
+    }
     controller
 }
 
