@@ -5,6 +5,7 @@ mod book_tile;
 mod metadata_dialog;
 mod profile;
 mod settings;
+mod steady_content;
 mod thumbnails;
 mod window;
 

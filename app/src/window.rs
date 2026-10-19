@@ -22,6 +22,7 @@ use crate::book_tile::BookTile;
 use crate::metadata_dialog::MetadataDialog;
 use crate::profile;
 use crate::settings::Settings;
+use crate::steady_content::SteadyContent;
 use crate::thumbnails::Thumbnails;
 
 const DEFAULT_COVER_WIDTH: i32 = 160;
@@ -76,6 +77,7 @@ mod imp {
 
         fn class_init(klass: &mut Self::Class) {
             BookDetails::ensure_type();
+            SteadyContent::ensure_type();
             klass.bind_template();
 
             klass.install_action("win.import-files", None, |win, _, _| win.choose_files());
