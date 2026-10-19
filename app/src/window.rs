@@ -409,7 +409,6 @@ impl Window {
                 }
             }
         ));
-        imp.search_entry.set_key_capture_widget(Some(self));
         imp.search_entry
             .connect_stop_search(|entry| entry.set_text(""));
     }
