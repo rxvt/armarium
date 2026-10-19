@@ -1,5 +1,6 @@
 //! The details sidebar for the selected Book: Cover, title and authors,
-//! Formats with Open and Delete buttons, and the rest of its Metadata.
+//! Formats with Open and Delete buttons, and the rest of its Metadata. With
+//! no single Book selected it says so instead.
 
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -20,6 +21,10 @@ mod imp {
     #[derive(Default, gtk::CompositeTemplate)]
     #[template(resource = "/io/github/rxvt/Armarium/ui/book-details.ui")]
     pub struct BookDetails {
+        #[template_child]
+        pub stack: TemplateChild<gtk::Stack>,
+        #[template_child]
+        pub none_page: TemplateChild<adw::StatusPage>,
         #[template_child]
         pub cover: TemplateChild<BookTile>,
         #[template_child]
@@ -80,6 +85,7 @@ impl BookDetails {
     /// selected Book.
     pub fn show(&self, book: &Book, cover: Option<PathBuf>, thumbnails: &Rc<Thumbnails>) {
         let imp = self.imp();
+        imp.stack.set_visible_child_name("book");
         imp.cover.bind(book, cover, thumbnails);
         imp.title_label.set_label(&book.metadata.title);
         imp.authors_label.set_label(&authors_line(book));
@@ -144,5 +150,16 @@ impl BookDetails {
         let description = m.description.as_deref().unwrap_or_default();
         imp.description_label.set_label(description);
         imp.description_group.set_visible(!description.is_empty());
+    }
+
+    /// Shows that `count` Books (none, or several) are selected.
+    pub fn show_selection_count(&self, count: u64) {
+        let imp = self.imp();
+        let title = match count {
+            0 => "No Book Selected".to_owned(),
+            n => format!("{n} Books Selected"),
+        };
+        imp.none_page.set_title(&title);
+        imp.stack.set_visible_child_name("none");
     }
 }

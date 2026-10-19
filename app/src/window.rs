@@ -64,8 +64,7 @@ mod imp {
         pub grid_factory: OnceCell<gtk::SignalListItemFactory>,
         pub settings: OnceCell<Settings>,
         pub importing: Cell<bool>,
-        /// Set when the details sidebar was toggled off, so changing the
-        /// selection leaves it closed.
+        /// Set when the details sidebar was toggled off with I.
         pub details_hidden: Cell<bool>,
     }
 
@@ -270,8 +269,9 @@ impl Window {
         }
     }
 
-    /// Shows the details sidebar for a single selection and enables the
-    /// actions that apply.
+    /// Fills the details sidebar from the selection and enables the actions
+    /// that apply. The sidebar stays open whatever is selected, so the grid
+    /// beside it keeps its columns.
     fn update_selection(&self) {
         let imp = self.imp();
         let count = self.selection().selection().size();
@@ -281,14 +281,16 @@ impl Window {
             let cover = self.with_library(|lib| lib.cover_path(&book)).flatten();
             let thumbnails = imp.thumbnails.borrow().clone().unwrap();
             imp.details.show(&book, cover, &thumbnails);
+        } else {
+            imp.details.show_selection_count(count);
         }
+        let has_books = imp.store.borrow().as_ref().is_some_and(|s| s.n_items() > 0);
         imp.split_view
-            .set_show_sidebar(single.is_some() && !imp.details_hidden.get());
+            .set_show_sidebar(has_books && !imp.details_hidden.get());
         for action in [
             "win.open-format",
             "win.show-in-files",
             "win.edit",
-            "win.toggle-details",
             "win.delete-format",
         ] {
             self.action_set_enabled(action, single.is_some());
