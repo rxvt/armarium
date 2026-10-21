@@ -68,7 +68,7 @@ No crate version, toolchain or tool is used until it has been public for at leas
 
 ### Not in v1
 
-- Kindle or any other Device support (see [Later](#later)).
+- Device support (see [Later](#later)).
 - Formats beyond EPUB and PDF (CBZ, TXT, MOBI/AZW3, …). Format handling should be easy to extend.
 - Built-in Reader.
 - Online metadata lookup.
@@ -128,9 +128,11 @@ Merging is automatic, never prompted.
 
 ## Later
 
-- **Kindle over USB**. The user's Kindle is a 2017 Paperwhite, which mounts as USB mass storage (not MTP). Kindles don't accept EPUB over USB, so Books will need converting to **AZW3** (not the deprecated MOBI). The likely route is shelling out to Calibre's `ebook-convert`. The converted file is not a Format ([ADR 0004](./adr/0004-device-copies-are-not-formats.md)); Books on the Device are matched by a filename tag ([ADR 0005](./adr/0005-device-books-matched-by-filename-tag.md)).
-  - **Connecting**: udiskie mounts the Kindle; Armarium watches mounts (GIO volume monitor), recognises a Kindle by its `documents/` and `system/` folders, never mounts anything itself, and offers Eject (the Kindle only re-indexes after a safe eject). One Device at a time. A header-bar indicator shows its name, free space and Eject.
-  - **Send**: EPUB present → convert to AZW3 with `ebook-convert --share-not-sync`, passing the current Metadata and Cover (personal-document mode keeps the embedded Cover; otherwise the Kindle overwrites it with a blank one from Amazon). PDF only → copied as-is, embedded title shown by the Kindle. Calibre is an optional runtime dependency; without it only EPUB Sends fail. Runs in the background like Import, with a summary toast; free space is checked before the batch starts. Sending a Book already on the Device replaces the copy and renames its `.sdr` so reading position and highlights survive.
-  - **Remove**: deletes the tagged file and its `.sdr` (after a confirmation that warns highlights are lost). Untagged files are never touched. Deleting a Book from the Library leaves its Device copy alone.
-  - **UI**: Send/Remove in the context menu and details sidebar while a Kindle is connected, multi-select allowed. A green tick bottom-right on the Cover (grid and list) and "On Kindle" in the sidebar, only while connected.
-- Other Devices, tags/collections, online metadata, writing Metadata into files, folder watching, matching Omarchy theme colours.
+- **Devices over USB** ([ADR 0005](./adr/0005-device-books-matched-by-filename-tag.md), [ADR 0006](./adr/0006-koreader-devices-open-formats-only.md)). A Device is an e-reader running KOReader that mounts as USB mass storage; the user's is a jailbroken 2017 Kindle Paperwhite. No conversion, no Calibre, no Amazon formats; stock Kindles are not supported.
+  - **Connecting**: udiskie mounts the Device; Armarium watches mounts (GIO volume monitor), recognises KOReader by `koreader/` (Kindle), `.adds/koreader/` (Kobo) or `applications/koreader/` (PocketBook), each holding `koreader.sh`, never mounts anything itself, and offers Eject. One Device at a time. A header-bar indicator shows its platform name (Kindle, Kobo, PocketBook), free space and Eject.
+  - **Layout**: `Books/<Author>/<Title> [armarium-<book id>].<ext>` at the drive root. Only the tag is matched; anything untagged or outside `Books/` is ignored and never touched. Ticks are worked out from the Device while it is connected; nothing is remembered.
+  - **Send**: copies the EPUB if the Book has one, otherwise the PDF (any future Format works too), byte-for-byte; KOReader shows the file's embedded Metadata and Cover, not the Library's. Written under a temporary name and renamed when complete; leftovers are deleted on the next connect. Runs in the background like Import, with a summary toast; free space is checked before the batch starts; Eject is disabled meanwhile. Not offered for Books already on the Device, and Device files are never renamed (KOReader ties reading position to the path).
+  - **Remove**: deletes the tagged file and its `<name>.sdr` (KOReader's progress and highlights), after a confirmation saying so, then the author folder if it is now empty. Sidecars KOReader keeps centrally and `koreader/` itself are never touched. Deleting a Book from the Library leaves its Device copy alone.
+  - **UI**: "Send to Kindle" / "Remove from Kindle" (platform name) in the context menu and details sidebar while a Device is connected, multi-select allowed. A green tick bottom-right on the Cover (grid and list) and "On Kindle" in the sidebar, only while connected.
+  - **Maybe later**: Sending EPUBs with the Library's Metadata and Cover written into the copy; marking any removable drive as a Device by hand.
+- Tags/collections, online metadata, writing Metadata into files, folder watching, matching Omarchy theme colours.
