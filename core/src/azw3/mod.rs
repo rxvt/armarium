@@ -30,12 +30,21 @@ use crate::model::Metadata;
 /// Converts the EPUB at `epub` to AZW3, describing the book with `metadata`
 /// and, if given, `cover` (an encoded image) rather than what the EPUB says.
 ///
-/// The book is an `EBOK` with its UUID as the ASIN, as Calibre writes it by
-/// default: a Kindle only shows a library thumbnail for books with an ASIN,
-/// named after it. The Kindle fills that thumbnail with a placeholder rather
-/// than the embedded Cover, so Send has to write it too.
-pub fn convert(epub: &Path, metadata: &Metadata, cover: Option<&[u8]>) -> Result<Vec<u8>> {
+/// The book is an `EBOK` with `asin` as its ASIN, or else the EPUB's UUID
+/// (random if it has none), as Calibre writes it by default: a Kindle only
+/// shows a library thumbnail for books with an ASIN, named after it. The
+/// Kindle fills that thumbnail with a placeholder rather than the embedded
+/// Cover, so Send has to write it too.
+pub fn convert(
+    epub: &Path,
+    metadata: &Metadata,
+    cover: Option<&[u8]>,
+    asin: Option<&str>,
+) -> Result<Vec<u8>> {
     let mut oeb = oeb::Oeb::read(epub)?;
+    if let Some(asin) = asin {
+        oeb.uuid = Some(asin.to_owned());
+    }
     toc::add_inline_toc(&mut oeb);
     let resources = resources::Resources::new(&oeb, cover);
     let kf8 = writer::Writer::new(&mut oeb, &resources, true).write()?;
@@ -147,7 +156,7 @@ mod tests {
             ..Metadata::default()
         };
 
-        let db = convert(&path, &metadata, None).unwrap();
+        let db = convert(&path, &metadata, None, None).unwrap();
         assert_eq!(&db[60..68], b"BOOKMOBI");
         let records = records(&db);
         let r0 = records[0];
@@ -199,7 +208,7 @@ mod tests {
             )
             .unwrap();
 
-        let db = convert(&path, &Metadata::default(), Some(&jpeg)).unwrap();
+        let db = convert(&path, &Metadata::default(), Some(&jpeg), None).unwrap();
         let records = records(&db);
         let first_resource = records[u32_at(records[0], 108) as usize];
         assert_eq!(
@@ -212,12 +221,27 @@ mod tests {
     }
 
     #[test]
+    fn the_asin_is_the_books_uuid_unless_given() {
+        let dir = TempDir::new();
+        let path = dir.path().join("book.epub");
+        std::fs::write(&path, epub()).unwrap();
+        let has = |db: &[u8], s: &str| records(db)[0].windows(s.len()).any(|w| w == s.as_bytes());
+
+        let db = convert(&path, &Metadata::default(), None, None).unwrap();
+        assert!(has(&db, "0d5c1a3e-0000-4000-8000-000000000001"));
+
+        let db = convert(&path, &Metadata::default(), None, Some("given-asin")).unwrap();
+        assert!(has(&db, "given-asin"));
+        assert!(!has(&db, "0d5c1a3e-0000-4000-8000-000000000001"));
+    }
+
+    #[test]
     fn rejects_files_that_are_not_epubs() {
         let dir = TempDir::new();
         let path = dir.path().join("book.epub");
         std::fs::write(&path, b"not a zip").unwrap();
         assert!(matches!(
-            convert(&path, &Metadata::default(), None),
+            convert(&path, &Metadata::default(), None, None),
             Err(crate::Error::Unreadable(_))
         ));
     }

@@ -37,7 +37,6 @@ const DEVICE_TAG_PREFIX: &str = "[armarium-";
 /// found again ([ADR 0005]), e.g. `Dune - Frank Herbert [armarium-42].azw3`.
 ///
 /// [ADR 0005]: ../../docs/adr/0005-device-books-matched-by-filename-tag.md
-#[cfg_attr(not(test), expect(dead_code, reason = "Device::send will use it"))]
 pub fn device_file_name(metadata: &Metadata, id: BookId, extension: &str) -> String {
     format!(
         "{} - {} {DEVICE_TAG_PREFIX}{}].{extension}",
@@ -45,6 +44,11 @@ pub fn device_file_name(metadata: &Metadata, id: BookId, extension: &str) -> Str
         author_part(metadata),
         id.0
     )
+}
+
+/// The name a Book's copy is written under before it is complete.
+pub fn device_part_file_name(id: BookId) -> String {
+    format!(".armarium-{}.part", id.0)
 }
 
 /// Whether `file_name` is a partial copy left by an interrupted Send:

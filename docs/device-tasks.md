@@ -2,7 +2,7 @@
 
 The work behind the Kindle design in [v1-plan.md](./v1-plan.md#later), split into slices that each end in something testable. Vocabulary is in [GLOSSARY.md](../GLOSSARY.md); see also [ADR 0004](./adr/0004-device-copies-are-not-formats.md), [ADR 0005](./adr/0005-device-books-matched-by-filename-tag.md) and [ADR 0007](./adr/0007-epub-to-azw3-port-of-calibre.md).
 
-Already done: EPUB to AZW3 conversion, `armarium_core::azw3::convert` (try it with `just azw3 BOOK.epub OUT.azw3`), and slice 1, `armarium_core::device`. Partial copies are named `.armarium-<id>.part`.
+Already done: EPUB to AZW3 conversion, `armarium_core::azw3::convert` (try it with `just azw3 BOOK.epub OUT.azw3`), and slices 1 and 3, `armarium_core::device`. Partial copies are named `.armarium-<id>.part`.
 
 ```
 1 ──► 2
@@ -37,7 +37,7 @@ A new `core::device` module, unit-tested against temporary folders laid out like
 ## 3. `core`: Send
 
 - `Device::send(library, book)`: with an EPUB, `azw3::convert` it using the Book's current Metadata and `cover.jpg`; with only a PDF, copy it as-is. Write to a temporary name in `documents/`, `fsync`, then rename to the tagged name.
-- For an AZW3, also write the Cover as `system/thumbnails/thumbnail_<ASIN>_EBOK_portrait.jpg` (the ASIN is the book's UUID, EXTH 113), as Calibre's Kindle driver does, so the library keeps the Cover after the Kindle has been online and fails to fetch one from Amazon.
+- For an AZW3, also write the Cover as `system/thumbnails/thumbnail_<ASIN>_EBOK_portrait.jpg` (the ASIN, EXTH 113, is derived from the Book id so it's the same on every Send), as Calibre's Kindle driver does, so the library keeps the Cover after the Kindle has been online and fails to fetch one from Amazon.
 - Sending a Book already on the Device replaces its copy and renames its `.sdr` to match, so reading position and highlights survive.
 - No cache: every Send converts again, so the copy always reflects the current Metadata and Cover.
 - A batch API that converts first, checks the total size against free space and refuses the whole batch if it won't fit; otherwise each Book succeeds or fails on its own (an EPUB that won't convert is a failure, with the reason), in a report like `ImportReport`.

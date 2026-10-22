@@ -14,7 +14,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::process::exit(2);
     };
     let Extracted { metadata, cover } = extract::extract(FormatKind::Epub, input)?;
-    let azw3 = armarium_core::azw3::convert(input, &metadata, cover.as_deref())?;
+    let azw3 = armarium_core::azw3::convert(input, &metadata, cover.as_deref(), None)?;
     std::fs::write(output, azw3)?;
     Ok(())
 }
