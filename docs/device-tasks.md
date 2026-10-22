@@ -37,6 +37,7 @@ A new `core::device` module, unit-tested against temporary folders laid out like
 ## 3. `core`: Send
 
 - `Device::send(library, book)`: with an EPUB, `azw3::convert` it using the Book's current Metadata and `cover.jpg`; with only a PDF, copy it as-is. Write to a temporary name in `documents/`, `fsync`, then rename to the tagged name.
+- For an AZW3, also write the Cover as `system/thumbnails/thumbnail_<ASIN>_EBOK_portrait.jpg` (the ASIN is the book's UUID, EXTH 113), as Calibre's Kindle driver does, so the library keeps the Cover after the Kindle has been online and fails to fetch one from Amazon.
 - Sending a Book already on the Device replaces its copy and renames its `.sdr` to match, so reading position and highlights survive.
 - A batch API that converts first, checks the total size against free space and refuses the whole batch if it won't fit; otherwise each Book succeeds or fails on its own (an EPUB that won't convert is a failure, with the reason), in a report like `ImportReport`.
 

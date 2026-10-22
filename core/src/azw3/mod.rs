@@ -30,14 +30,16 @@ use crate::model::Metadata;
 /// Converts the EPUB at `epub` to AZW3, describing the book with `metadata`
 /// and, if given, `cover` (an encoded image) rather than what the EPUB says.
 ///
-/// The book is a personal document (Calibre's `--share-not-sync`), so a
-/// Kindle shows its own Cover rather than replacing it with Amazon's.
+/// The book is an `EBOK` with its UUID as the ASIN, as Calibre writes it by
+/// default: a Kindle only shows a library thumbnail for books with an ASIN,
+/// named after it. The Kindle fills that thumbnail with a placeholder rather
+/// than the embedded Cover, so Send has to write it too.
 pub fn convert(epub: &Path, metadata: &Metadata, cover: Option<&[u8]>) -> Result<Vec<u8>> {
     let mut oeb = oeb::Oeb::read(epub)?;
     toc::add_inline_toc(&mut oeb);
     let resources = resources::Resources::new(&oeb, cover);
     let kf8 = writer::Writer::new(&mut oeb, &resources, true).write()?;
-    Ok(mobi::write(kf8, resources, &oeb, metadata, true))
+    Ok(mobi::write(kf8, resources, &oeb, metadata, false))
 }
 
 #[cfg(test)]
@@ -206,6 +208,7 @@ mod tests {
         );
         let text = String::from_utf8(text(&records)).unwrap();
         assert!(text.contains("kindle:embed:0001?mime=image/jpeg"));
+        assert!(records[0].windows(4).any(|w| w == b"EBOK"));
     }
 
     #[test]
