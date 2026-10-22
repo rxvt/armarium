@@ -1,5 +1,5 @@
 //! One Book in the cover grid: Cover (or a title/author placeholder), title
-//! and authors.
+//! and authors, and a tick while it is on the connected Device.
 
 use std::cell::Cell;
 use std::path::PathBuf;
@@ -10,6 +10,7 @@ use gtk::glib;
 use gtk::prelude::*;
 use gtk::subclass::prelude::*;
 
+use crate::book_object;
 use crate::thumbnails::Thumbnails;
 
 mod imp {
@@ -22,6 +23,8 @@ mod imp {
         pub cover: TemplateChild<gtk::Overlay>,
         #[template_child]
         pub picture: TemplateChild<gtk::Picture>,
+        #[template_child]
+        pub device_tick: TemplateChild<gtk::Image>,
         #[template_child]
         pub placeholder: TemplateChild<gtk::Box>,
         #[template_child]
@@ -79,6 +82,11 @@ impl BookTile {
     pub fn set_caption_visible(&self, visible: bool) {
         self.imp().title_label.set_visible(visible);
         self.imp().author_label.set_visible(visible);
+    }
+
+    /// Ticks the Cover while the Book at `item` is on the connected Device.
+    pub fn bind_on_device(&self, item: &gtk::ListItem) {
+        book_object::bind_on_device(item, &*self.imp().device_tick);
     }
 
     pub fn bind(&self, book: &Book, cover: Option<PathBuf>, thumbnails: &Rc<Thumbnails>) {

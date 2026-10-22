@@ -57,6 +57,24 @@ template $ArmariumBookDetails: Adw.Bin {
                 "dimmed",
               ]
             }
+
+            Gtk.Box on_device_box {
+              halign: center;
+              spacing: 6;
+              visible: false;
+
+              Gtk.Image {
+                icon-name: "object-select-symbolic";
+              }
+
+              Gtk.Label {
+                label: _("On Kindle");
+              }
+
+              styles [
+                "success",
+              ]
+            }
           }
 
           Gtk.Button {

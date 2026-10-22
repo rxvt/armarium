@@ -1,20 +1,25 @@
 //! A GObject wrapping a core [`Book`], so Books can live in a `gio::ListStore`.
 
-use std::cell::{Ref, RefCell};
+use std::cell::{Cell, Ref, RefCell};
 use std::cmp::Ordering;
 
 use armarium_core::model::{self, Book, SortKey, SortKeys};
 use gtk::glib;
+use gtk::prelude::*;
 use gtk::subclass::prelude::*;
 
 mod imp {
     use super::*;
 
-    #[derive(Default)]
+    #[derive(Default, glib::Properties)]
+    #[properties(wrapper_type = super::BookObject)]
     pub struct BookObject {
         pub book: RefCell<Option<Book>>,
         pub search_text: RefCell<String>,
         pub sort_keys: RefCell<SortKeys>,
+        /// Whether the connected Device has a copy.
+        #[property(get, set)]
+        pub on_device: Cell<bool>,
     }
 
     #[glib::object_subclass]
@@ -23,6 +28,7 @@ mod imp {
         type Type = super::BookObject;
     }
 
+    #[glib::derived_properties]
     impl ObjectImpl for BookObject {}
 }
 
@@ -55,4 +61,15 @@ impl BookObject {
             .borrow()
             .compare(&other.imp().sort_keys.borrow(), key)
     }
+}
+
+/// Shows `widget` only while the Book at `item` is on the connected Device.
+pub fn bind_on_device(item: &gtk::ListItem, widget: &impl IsA<gtk::Widget>) {
+    item.property_expression("item")
+        .chain_property::<BookObject>("on-device")
+        .bind(
+            widget.upcast_ref::<gtk::Widget>(),
+            "visible",
+            gtk::Widget::NONE,
+        );
 }

@@ -51,6 +51,19 @@ template $ArmariumBookTile: Gtk.Box {
       can-shrink: true;
     }
 
+    [overlay]
+    Gtk.Image device_tick {
+      icon-name: "object-select-symbolic";
+      tooltip-text: _("On Kindle");
+      halign: end;
+      valign: end;
+      visible: false;
+
+      styles [
+        "device-tick",
+      ]
+    }
+
     styles [
       "cover",
       "card",

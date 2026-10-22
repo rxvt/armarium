@@ -1,5 +1,5 @@
 //! The main window: header bar, cover grid and list, details sidebar,
-//! Import, and opening and deleting Books.
+//! Import, opening and deleting Books, and the connected Device.
 
 use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::HashSet;
@@ -19,6 +19,7 @@ use crate::book_details::BookDetails;
 use crate::book_list;
 use crate::book_object::BookObject;
 use crate::book_tile::BookTile;
+use crate::device_watch::{Connected, DeviceWatch};
 use crate::metadata_dialog::MetadataDialog;
 use crate::profile;
 use crate::settings::Settings;
@@ -38,6 +39,14 @@ mod imp {
     pub struct Window {
         #[template_child]
         pub toast_overlay: TemplateChild<adw::ToastOverlay>,
+        #[template_child]
+        pub device_indicator: TemplateChild<gtk::Box>,
+        #[template_child]
+        pub device_name: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub device_free: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub device_eject: TemplateChild<gtk::Button>,
         #[template_child]
         pub search_entry: TemplateChild<gtk::SearchEntry>,
         #[template_child]
@@ -67,6 +76,10 @@ mod imp {
         pub importing: Cell<bool>,
         /// Set when the details sidebar was toggled off with I.
         pub details_hidden: Cell<bool>,
+        pub device_watch: OnceCell<DeviceWatch>,
+        pub device: RefCell<Option<Connected>>,
+        /// The Books on the connected Device.
+        pub on_device: RefCell<HashSet<BookId>>,
     }
 
     #[glib::object_subclass]
@@ -126,6 +139,7 @@ mod imp {
                 klass.add_binding_action(key, gdk::ModifierType::CONTROL_MASK, action);
             }
             klass.install_action("win.delete", None, |win, _, _| win.confirm_delete_books());
+            klass.install_action("win.eject-device", None, |win, _, _| win.eject_device());
             klass.install_action(
                 "win.delete-format",
                 Some(glib::VariantTy::STRING),
@@ -166,6 +180,7 @@ mod imp {
             obj.setup_search();
             obj.setup_drop();
             obj.open_library(obj.library_root());
+            obj.watch_devices();
         }
     }
 
@@ -282,7 +297,7 @@ impl Window {
             let book = obj.book();
             let cover = self.with_library(|lib| lib.cover_path(&book)).flatten();
             let thumbnails = imp.thumbnails.borrow().clone().unwrap();
-            imp.details.show(&book, cover, &thumbnails);
+            imp.details.show(&book, obj.on_device(), cover, &thumbnails);
         } else {
             imp.details.show_selection_count(count);
         }
@@ -315,6 +330,7 @@ impl Window {
                 let item = item.downcast_ref::<gtk::ListItem>().unwrap();
                 let tile = BookTile::new();
                 tile.set_cover_width(win.imp().cover_width.get());
+                tile.bind_on_device(item);
                 win.attach_context_menu(tile.upcast_ref(), item);
                 item.set_child(Some(&tile));
             }
@@ -484,6 +500,7 @@ impl Window {
         let objects: Vec<BookObject> = books.into_iter().map(BookObject::new).collect();
         let store = self.store();
         store.splice(0, store.n_items(), &objects);
+        self.update_ticks();
         // Keep the same Books selected, e.g. after deleting one Format.
         let selection = self.selection();
         for position in 0..selection.n_items() {
@@ -997,6 +1014,94 @@ impl Window {
         match result {
             Some(Err(e)) => Err(e.to_string()),
             _ => Ok(()),
+        }
+    }
+
+    fn watch_devices(&self) {
+        self.action_set_enabled("win.eject-device", false);
+        let watch = DeviceWatch::start(glib::clone!(
+            #[weak(rename_to = win)]
+            self,
+            move |connected| win.set_device(connected)
+        ));
+        let _ = self.imp().device_watch.set(watch);
+    }
+
+    /// Connects `connected`, or with `None` forgets the Device.
+    fn set_device(&self, connected: Option<Connected>) {
+        if let Some(c) = &connected
+            && let Err(e) = c.device.clean_up()
+        {
+            eprintln!("could not clean up {}: {e}", c.device.root().display());
+        }
+        self.imp().device.replace(connected);
+        self.refresh_device();
+    }
+
+    /// Reads which Books are on the Device, and its free space, again.
+    fn refresh_device(&self) {
+        let imp = self.imp();
+        let mut on_device = HashSet::new();
+        let connected = imp.device.borrow();
+        if let Some(c) = connected.as_ref() {
+            match c.device.books() {
+                Ok(books) => on_device.extend(books.into_keys()),
+                Err(e) => self.toast(&format!("Could not read the books on {}: {e}", c.name)),
+            }
+            let free = c
+                .device
+                .free_space()
+                .map(|bytes| format!("{} free", glib::format_size(bytes)))
+                .unwrap_or_default();
+            imp.device_name.set_label(&c.name);
+            imp.device_free.set_label(&free);
+            imp.device_eject
+                .set_tooltip_text(Some(&format!("Eject {}", c.name)));
+        }
+        imp.device_indicator.set_visible(connected.is_some());
+        self.action_set_enabled("win.eject-device", connected.is_some());
+        drop(connected);
+        imp.on_device.replace(on_device);
+        self.update_ticks();
+        self.update_selection();
+    }
+
+    fn update_ticks(&self) {
+        let on_device = self.imp().on_device.borrow();
+        for obj in self.store().iter::<BookObject>().flatten() {
+            let id = obj.book().id;
+            obj.set_on_device(on_device.contains(&id));
+        }
+    }
+
+    /// Ejects the Device so it can be unplugged. The Kindle only looks for
+    /// new Books after a safe eject.
+    fn eject_device(&self) {
+        let Some((name, mount)) =
+            (self.imp().device.borrow().as_ref()).map(|c| (c.name.clone(), c.mount.clone()))
+        else {
+            return;
+        };
+        let Some(mount) = mount else {
+            // A folder standing in for a Device just goes away.
+            self.set_device(None);
+            return;
+        };
+        let done = glib::clone!(
+            #[weak(rename_to = win)]
+            self,
+            move |result: Result<(), glib::Error>| match result {
+                Ok(()) => win.toast(&format!("{name} can be unplugged")),
+                Err(e) if e.matches(gio::IOErrorEnum::FailedHandled) => {}
+                Err(e) => win.toast(&format!("Could not eject {name}: {}", e.message())),
+            }
+        );
+        let operation = gtk::MountOperation::new(Some(self));
+        let flags = gio::MountUnmountFlags::NONE;
+        if mount.can_eject() {
+            mount.eject_with_operation(flags, Some(&operation), gio::Cancellable::NONE, done);
+        } else {
+            mount.unmount_with_operation(flags, Some(&operation), gio::Cancellable::NONE, done);
         }
     }
 

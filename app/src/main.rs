@@ -2,6 +2,7 @@ mod book_details;
 mod book_list;
 mod book_object;
 mod book_tile;
+mod device_watch;
 mod metadata_dialog;
 mod profile;
 mod settings;

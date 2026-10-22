@@ -20,6 +20,34 @@ template $ArmariumWindow: Adw.ApplicationWindow {
           dropdown-tooltip: _("More Import Options");
         }
 
+        [start]
+        Gtk.Box device_indicator {
+          spacing: 6;
+          margin-start: 6;
+          visible: false;
+
+          Gtk.Image {
+            icon-name: "drive-removable-media-symbolic";
+          }
+
+          Gtk.Label device_name {}
+
+          Gtk.Label device_free {
+            styles [
+              "dimmed",
+            ]
+          }
+
+          Gtk.Button device_eject {
+            icon-name: "media-eject-symbolic";
+            action-name: "win.eject-device";
+
+            styles [
+              "flat",
+            ]
+          }
+        }
+
         title-widget: Gtk.SearchEntry search_entry {
           placeholder-text: _("Search title, author or series");
           width-request: 360;

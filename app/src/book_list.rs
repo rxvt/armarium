@@ -8,7 +8,7 @@ use armarium_core::model::{Book, SortKey};
 use gtk::glib;
 use gtk::prelude::*;
 
-use crate::book_object::BookObject;
+use crate::book_object::{self, BookObject};
 use crate::book_tile::authors_line;
 use crate::thumbnails::Thumbnails;
 
@@ -106,17 +106,29 @@ fn cover_column(
             .can_shrink(true)
             .width_request(COVER_WIDTH)
             .height_request(COVER_WIDTH * 3 / 2)
-            .halign(gtk::Align::Center)
             .overflow(gtk::Overflow::Hidden)
             .css_classes(["cover", "list-cover"])
             .build();
-        setup(picture.upcast_ref(), cell);
-        cell.set_child(Some(&picture));
+        let tick = gtk::Image::builder()
+            .icon_name("object-select-symbolic")
+            .tooltip_text("On Kindle")
+            .halign(gtk::Align::End)
+            .valign(gtk::Align::End)
+            .css_classes(["device-tick", "list-cover-tick"])
+            .build();
+        book_object::bind_on_device(cell.upcast_ref(), &tick);
+        let overlay = gtk::Overlay::builder()
+            .child(&picture)
+            .halign(gtk::Align::Center)
+            .build();
+        overlay.add_overlay(&tick);
+        setup(overlay.upcast_ref(), cell);
+        cell.set_child(Some(&overlay));
     });
     factory.connect_bind(move |_, cell| {
         let cell = cell.downcast_ref::<gtk::ColumnViewCell>().unwrap();
         let (Some(picture), Some(obj)) = (
-            cell.child().and_downcast::<gtk::Picture>(),
+            cover_picture(cell),
             cell.item().and_downcast::<BookObject>(),
         ) else {
             return;
@@ -141,18 +153,20 @@ fn cover_column(
         });
     });
     factory.connect_unbind(|_, cell| {
-        if let Some(picture) = cell
-            .downcast_ref::<gtk::ColumnViewCell>()
-            .unwrap()
-            .child()
-            .and_downcast::<gtk::Picture>()
-        {
+        if let Some(picture) = cover_picture(cell.downcast_ref().unwrap()) {
             picture.set_paintable(gtk::gdk::Paintable::NONE);
         }
     });
     let column = gtk::ColumnViewColumn::new(None, Some(factory));
     column.set_fixed_width(COVER_WIDTH + 24);
     column
+}
+
+fn cover_picture(cell: &gtk::ColumnViewCell) -> Option<gtk::Picture> {
+    cell.child()
+        .and_downcast::<gtk::Overlay>()?
+        .child()
+        .and_downcast()
 }
 
 /// "Dune 2", "Discworld 1.5", or "" outside a series.

@@ -1,5 +1,5 @@
 //! The details sidebar for the selected Book: Cover, title and authors,
-//! Formats with Open and Delete buttons, and the rest of its Metadata. With
+//! whether it is on the connected Device, Formats with Open and Delete buttons, and the rest of its Metadata. With
 //! no single Book selected it says so instead.
 
 use std::path::PathBuf;
@@ -31,6 +31,8 @@ mod imp {
         pub title_label: TemplateChild<gtk::Label>,
         #[template_child]
         pub authors_label: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub on_device_box: TemplateChild<gtk::Box>,
         #[template_child]
         pub formats_list: TemplateChild<gtk::ListBox>,
         #[template_child]
@@ -83,9 +85,16 @@ impl BookDetails {
     /// Shows `book`. The Format buttons fire `win.open-format` and
     /// `win.delete-format` with the Format's extension, acting on the
     /// selected Book.
-    pub fn show(&self, book: &Book, cover: Option<PathBuf>, thumbnails: &Rc<Thumbnails>) {
+    pub fn show(
+        &self,
+        book: &Book,
+        on_device: bool,
+        cover: Option<PathBuf>,
+        thumbnails: &Rc<Thumbnails>,
+    ) {
         let imp = self.imp();
         imp.stack.set_visible_child_name("book");
+        imp.on_device_box.set_visible(on_device);
         imp.cover.bind(book, cover, thumbnails);
         imp.title_label.set_label(&book.metadata.title);
         imp.authors_label.set_label(&authors_line(book));

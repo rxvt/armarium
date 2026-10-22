@@ -99,6 +99,12 @@ scratch *args:
         ARMARIUM_SETTINGS={{ quote(scratch / "settings.ini") }} \
         cargo run -p armarium -- "$@"
 
+# Open the app on the scratch Library with a scratch Kindle (a plain folder) connected
+[positional-arguments]
+scratch-kindle *args:
+    mkdir -p {{ quote(scratch / "kindle/documents") }} {{ quote(scratch / "kindle/system") }}
+    ARMARIUM_DEVICE={{ quote(scratch / "kindle") }} just scratch "$@"
+
 # Render the scratch Library's window to a PNG and quit
 screenshot out=(scratch / "screenshot.png"):
     ARMARIUM_SCREENSHOT={{ quote(out) }} just scratch

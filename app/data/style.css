@@ -22,3 +22,19 @@
   border-radius: 3px;
   margin: 3px 0;
 }
+
+/* Bottom-right of a Cover while the Book is on the connected Device. */
+.device-tick {
+  margin: 6px;
+  padding: 4px;
+  border-radius: 999px;
+  background: var(--success-bg-color);
+  color: var(--success-fg-color);
+}
+
+/* Clear of the Cover's own margin in the list. */
+.list-cover-tick {
+  margin: 4px 1px;
+  padding: 1px;
+  -gtk-icon-size: 10px;
+}
