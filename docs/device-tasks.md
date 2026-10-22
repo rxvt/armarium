@@ -39,6 +39,7 @@ A new `core::device` module, unit-tested against temporary folders laid out like
 - `Device::send(library, book)`: with an EPUB, `azw3::convert` it using the Book's current Metadata and `cover.jpg`; with only a PDF, copy it as-is. Write to a temporary name in `documents/`, `fsync`, then rename to the tagged name.
 - For an AZW3, also write the Cover as `system/thumbnails/thumbnail_<ASIN>_EBOK_portrait.jpg` (the ASIN is the book's UUID, EXTH 113), as Calibre's Kindle driver does, so the library keeps the Cover after the Kindle has been online and fails to fetch one from Amazon.
 - Sending a Book already on the Device replaces its copy and renames its `.sdr` to match, so reading position and highlights survive.
+- No cache: every Send converts again, so the copy always reflects the current Metadata and Cover.
 - A batch API that converts first, checks the total size against free space and refuses the whole batch if it won't fit; otherwise each Book succeeds or fails on its own (an EPUB that won't convert is a failure, with the reason), in a report like `ImportReport`.
 
 **Done when** tests cover a fresh Send of each Format, a replaced copy keeping its `.sdr`, an EPUB that fails to convert, a batch that doesn't fit, and a failure part-way through leaving no tagged partial file.
@@ -48,6 +49,8 @@ A new `core::device` module, unit-tested against temporary folders laid out like
 - "Send to Kindle" in the context menu and the details sidebar, visible while a Device is connected; works on a multi-selection.
 - Runs in the background like Import (`gio::spawn_blocking`), one Send at a time, with progress; Eject is disabled until it finishes.
 - Summary toast ("5 sent · 1 failed") with expandable details, reusing the Import summary pattern.
+- On activation, check again that the Device is still mounted and still a Kindle; if not, show a "Kindle disconnected" error toast and Send nothing.
+- If the Device disappears part-way through a batch, stop: Books already Sent are successes, the rest fail with "Kindle disconnected" in the summary.
 
 **Done when** Sending a few Books to the real Kindle shows ticks, and after Eject they appear in the Kindle's library with their Covers.
 
