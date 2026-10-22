@@ -22,6 +22,7 @@ name = "armarium-core"
 version = "0.1.0"
 dependencies = [
  "cairo-rs",
+ "flate2",
  "gio",
  "image",
  "poppler-rs",

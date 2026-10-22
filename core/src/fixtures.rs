@@ -112,6 +112,7 @@ pub struct EpubFixture {
     opf_path: String,
     metadata: String,
     manifest: String,
+    spine: String,
     files: Vec<(String, Vec<u8>)>,
     container: bool,
 }
@@ -122,6 +123,7 @@ impl EpubFixture {
             opf_path: "content.opf".into(),
             metadata: "<dc:title>Untitled</dc:title>".into(),
             manifest: String::new(),
+            spine: String::new(),
             files: Vec::new(),
             container: true,
         }
@@ -141,6 +143,12 @@ impl EpubFixture {
     /// Children of `<manifest>`.
     pub fn manifest(mut self, xml: &str) -> Self {
         self.manifest = xml.into();
+        self
+    }
+
+    /// Children of `<spine>`.
+    pub fn spine(mut self, xml: &str) -> Self {
+        self.spine = xml.into();
         self
     }
 
@@ -189,9 +197,11 @@ impl EpubFixture {
   <manifest>
     {}
   </manifest>
-  <spine/>
+  <spine>
+    {}
+  </spine>
 </package>"#,
-                self.metadata, self.manifest
+                self.metadata, self.manifest, self.spine
             )
             .as_bytes(),
         );

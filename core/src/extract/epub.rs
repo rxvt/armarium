@@ -47,7 +47,7 @@ fn unreadable(reason: impl Into<String>) -> Error {
     Error::Unreadable(format!("EPUB: {}", reason.into()))
 }
 
-fn read_entry<R: Read + Seek>(
+pub(crate) fn read_entry<R: Read + Seek>(
     archive: &mut ZipArchive<R>,
     name: &str,
     limit: u64,
@@ -66,7 +66,7 @@ fn read_entry<R: Read + Seek>(
     Ok(bytes)
 }
 
-fn rootfile_path(container: &Element) -> Option<String> {
+pub(crate) fn rootfile_path(container: &Element) -> Option<String> {
     let rootfiles: Vec<&Element> = container
         .child("rootfiles")?
         .children_named("rootfile")
@@ -254,7 +254,7 @@ fn strip_tags(s: &str) -> String {
 
 /// The manifest href of the cover image: EPUB 3 `cover-image` property,
 /// else the EPUB 2 `<meta name="cover">`, else an image item named like a cover.
-fn cover_href(package: &Element) -> Option<String> {
+pub(crate) fn cover_href(package: &Element) -> Option<String> {
     let items: Vec<&Element> = package.child("manifest")?.children_named("item").collect();
     let is_image = |item: &&&Element| {
         item.attr("media-type")
@@ -299,7 +299,7 @@ fn cover_href(package: &Element) -> Option<String> {
 
 /// Resolves a manifest href (relative to the OPF, percent-encoded) to a ZIP
 /// entry name.
-fn resolve_href(opf_path: &str, href: &str) -> String {
+pub(crate) fn resolve_href(opf_path: &str, href: &str) -> String {
     let href = percent_decode(href.split('#').next().unwrap_or(href));
     let mut parts: Vec<&str> = opf_path.split('/').collect();
     parts.pop();
@@ -315,7 +315,7 @@ fn resolve_href(opf_path: &str, href: &str) -> String {
     parts.join("/")
 }
 
-fn percent_decode(s: &str) -> String {
+pub(crate) fn percent_decode(s: &str) -> String {
     let bytes = s.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;

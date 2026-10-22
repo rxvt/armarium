@@ -10,7 +10,7 @@ Armarium is a personal, Linux-native ebook library for DRM-free books, in the sp
 - GTK4 + libadwaita via gtk4-rs, UI in Blueprint, custom widgets via GObject subclassing (no Relm4). See [ADR 0001](./adr/0001-gtk4-libadwaita-in-rust.md).
 - Follows the system light/dark scheme through libadwaita; no custom palette.
 - Cargo workspace:
-  - **`core`**: Library, database, Import, metadata extraction, Cover extraction. No GTK widgets. Unit-tested.
+  - **`core`**: Library, database, Import, metadata extraction, Cover extraction, EPUB to AZW3 conversion. No GTK widgets. Unit-tested.
   - **`app`**: the GTK UI on top of `core`.
 - Crates: `rusqlite` (hand-written SQL, numbered migrations, no ORM), `zip` + `quick-xml` (EPUB OPF/cover parsing), `poppler-rs` (PDF metadata and page-1 render), `gio` (Trash), `image` (thumbnails).
 - Requires `blueprint-compiler` (Arch `extra` repo) and a Rust toolchain via `rustup` (see [Toolchain](#toolchain)).
@@ -28,6 +28,7 @@ Vetted on crates.io in October 2026: each crate has a long history, tens of thou
 | `zip` | zip-rs/zip2 | Maintainer changed in 2024 and major versions move fast; pin it |
 | `quick-xml` | tafia/quick-xml | |
 | `image` | image-rs org | |
+| `flate2` | rust-lang | Already pulled in by `zip`; used directly for AZW3 font records, with the same `zlib-rs` backend |
 
 Rules:
 
@@ -68,7 +69,7 @@ No crate version, toolchain or tool is used until it has been public for at leas
 
 ### Not in v1
 
-- Device support (see [Later](#later)).
+- Kindle or any other Device support (see [Later](#later)). The EPUB to AZW3 conversion it needs is already in `core`.
 - Formats beyond EPUB and PDF (CBZ, TXT, MOBI/AZW3, …). Format handling should be easy to extend.
 - Built-in Reader.
 - Online metadata lookup.
@@ -128,11 +129,9 @@ Merging is automatic, never prompted.
 
 ## Later
 
-- **Devices over USB** ([ADR 0005](./adr/0005-device-books-matched-by-filename-tag.md), [ADR 0006](./adr/0006-koreader-devices-open-formats-only.md)). A Device is an e-reader running KOReader that mounts as USB mass storage; the user's is a jailbroken 2017 Kindle Paperwhite. No conversion, no Calibre, no Amazon formats; stock Kindles are not supported.
-  - **Connecting**: udiskie mounts the Device; Armarium watches mounts (GIO volume monitor), recognises KOReader by `koreader/` (Kindle), `.adds/koreader/` (Kobo) or `applications/koreader/` (PocketBook), each holding `koreader.sh`, never mounts anything itself, and offers Eject. One Device at a time. A header-bar indicator shows its platform name (Kindle, Kobo, PocketBook), free space and Eject.
-  - **Layout**: `Books/<Author>/<Title> [armarium-<book id>].<ext>` at the drive root. Only the tag is matched; anything untagged or outside `Books/` is ignored and never touched. Ticks are worked out from the Device while it is connected; nothing is remembered.
-  - **Send**: copies the EPUB if the Book has one, otherwise the PDF (any future Format works too), byte-for-byte; KOReader shows the file's embedded Metadata and Cover, not the Library's. Written under a temporary name and renamed when complete; leftovers are deleted on the next connect. Runs in the background like Import, with a summary toast; free space is checked before the batch starts; Eject is disabled meanwhile. Not offered for Books already on the Device, and Device files are never renamed (KOReader ties reading position to the path).
-  - **Remove**: deletes the tagged file and its `<name>.sdr` (KOReader's progress and highlights), after a confirmation saying so, then the author folder if it is now empty. Sidecars KOReader keeps centrally and `koreader/` itself are never touched. Deleting a Book from the Library leaves its Device copy alone.
-  - **UI**: "Send to Kindle" / "Remove from Kindle" (platform name) in the context menu and details sidebar while a Device is connected, multi-select allowed. A green tick bottom-right on the Cover (grid and list) and "On Kindle" in the sidebar, only while connected.
-  - **Maybe later**: Sending EPUBs with the Library's Metadata and Cover written into the copy; marking any removable drive as a Device by hand.
-- Tags/collections, online metadata, writing Metadata into files, folder watching, matching Omarchy theme colours.
+- **Kindle over USB** ([ADR 0004](./adr/0004-device-copies-are-not-formats.md), [ADR 0005](./adr/0005-device-books-matched-by-filename-tag.md), [ADR 0007](./adr/0007-epub-to-azw3-port-of-calibre.md)). The user's Kindle is a 2017 Paperwhite, which mounts as USB mass storage (not MTP). Kindles don't accept EPUB over USB, so Books are converted to **AZW3** (not the deprecated MOBI) by `core::azw3`, a Rust port of Calibre's AZW3 writer; Calibre itself is not needed. The converted file is not a Format; Books on the Device are matched by a filename tag.
+  - **Connecting**: udiskie mounts the Kindle; Armarium watches mounts (GIO volume monitor), recognises a Kindle by its `documents/` and `system/` folders, never mounts anything itself, and offers Eject (the Kindle only re-indexes after a safe eject). One Device at a time. A header-bar indicator shows its name, free space and Eject.
+  - **Send**: EPUB present → converted to AZW3 with the current Metadata and Cover, as a personal document (Calibre's `--share-not-sync`: no ASIN or `EBOK` type), so the Kindle keeps the embedded Cover rather than replacing it with a blank one from Amazon. PDF only → copied as-is, embedded title shown by the Kindle. An EPUB that fails to convert fails its Send, with the reason in the summary. Runs in the background like Import, with a summary toast; free space is checked before the batch starts. Sending a Book already on the Device replaces the copy and renames its `.sdr` so reading position and highlights survive.
+  - **Remove**: deletes the tagged file and its `.sdr` (after a confirmation that warns highlights are lost). Untagged files are never touched. Deleting a Book from the Library leaves its Device copy alone.
+  - **UI**: Send/Remove in the context menu and details sidebar while a Kindle is connected, multi-select allowed. A green tick bottom-right on the Cover (grid and list) and "On Kindle" in the sidebar, only while connected.
+- Other Devices, tags/collections, online metadata, writing Metadata into files, folder watching, matching Omarchy theme colours.

@@ -1,0 +1,28 @@
+Armarium is licensed under the GNU General Public License, version 3 or (at your option)
+any later version. See LICENSE.
+
+EPUB to AZW3 conversion (core/src/azw3/) is a Rust port of parts of calibre,
+https://calibre-ebook.com, by Kovid Goyal, taken from calibre 9.16
+(commit 0b8c0c2) and licensed under the GNU General Public License,
+version 3:
+
+  Copyright (C) 2008-2026 Kovid Goyal <kovid@kovidgoyal.net>
+
+  core/src/azw3/exth.rs       src/calibre/ebooks/mobi/writer8/exth.py
+  core/src/azw3/index.rs      src/calibre/ebooks/mobi/writer8/index.py
+  core/src/azw3/langcodes.rs  src/calibre/ebooks/mobi/langcodes.py
+  core/src/azw3/mobi.rs       src/calibre/ebooks/mobi/writer8/mobi.py
+  core/src/azw3/palmdoc.rs    src/calibre/ebooks/compression/palmdoc.c
+  core/src/azw3/resources.rs  src/calibre/ebooks/mobi/writer2/resources.py
+                              (and rescale_image in mobi/utils.py)
+  core/src/azw3/skeleton.rs   src/calibre/ebooks/mobi/writer8/skeleton.py
+  core/src/azw3/tbs.rs        src/calibre/ebooks/mobi/writer8/tbs.py
+  core/src/azw3/toc.rs        src/calibre/ebooks/mobi/writer8/toc.py
+  core/src/azw3/utils.rs      src/calibre/ebooks/mobi/utils.py
+  core/src/azw3/writer.rs     src/calibre/ebooks/mobi/writer8/main.py and
+                              src/calibre/ebooks/mobi/writer8/cleanup.py
+
+Those files are licensed under the GNU General Public License, version 3
+only, as calibre is. Because they are part of the armarium-core library,
+Armarium as a whole may only be distributed under version 3 of the GNU
+General Public License.

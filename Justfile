@@ -77,6 +77,10 @@ hooks:
 import library +paths:
     cargo run -p armarium-core --example import -- "$@"
 
+# Convert an EPUB to AZW3 with its own Metadata and Cover, to try on a Kindle
+azw3 epub out:
+    cargo run --release -p armarium-core --example azw3 -- {{ quote(epub) }} {{ quote(out) }}
+
 # Manual testing: fresh scratch Library, import sample books, open the app
 try books_dir=books: reset-scratch
     #!/usr/bin/env sh

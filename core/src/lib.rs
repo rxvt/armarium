@@ -1,5 +1,6 @@
 //! Armarium's Library: database, Import, Metadata and Cover extraction.
 
+pub mod azw3;
 pub mod cover;
 pub mod db;
 mod edit;

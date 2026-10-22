@@ -33,12 +33,12 @@ The external application the user's system opens a Format with.
 _Avoid_: Viewer
 
 **Device**:
-An e-reader running KOReader (e.g. a jailbroken Kindle, a Kobo), connected over USB, that the Library can put Books on.
+An external e-reader, connected over USB, that the Library can put Books on. The user's Kindle is the only one so far.
 _Avoid_: Kindle (when meaning Devices in general), reader, e-reader
 
 **Send**:
-Copying one of a Book's Formats, unchanged, onto a connected Device. The Book stays in the Library.
-_Avoid_: Push, sync, transfer, upload, export, convert
+Putting a Book onto a connected Device, converted if the Device can't read its Formats as they are. The Book stays in the Library.
+_Avoid_: Push, sync, transfer, upload, export
 
 **Remove**:
 Taking a Book that was Sent off a Device. The Library is not touched. Different from deleting a Book, which moves its files to the Trash.

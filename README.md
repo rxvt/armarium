@@ -49,6 +49,10 @@ Development builds use their own app id, settings, cache and Library, so they ne
 
 Vocabulary is defined in [GLOSSARY.md](GLOSSARY.md), the v1 scope in [docs/v1-plan.md](docs/v1-plan.md), and lasting decisions in [docs/adr/](docs/adr/).
 
+## Credits
+
+EPUB to AZW3 conversion (`core/src/azw3/`) is a Rust port of part of [calibre](https://calibre-ebook.com) by Kovid Goyal. See [NOTICE](NOTICE) for the files involved.
+
 ## License
 
-[GPL-3.0-or-later](LICENSE)
+[GPL-3.0-or-later](LICENSE). The files ported from calibre are GPL-3.0-only, as calibre is, so Armarium as a whole is distributed under GPL-3.0.

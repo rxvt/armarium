@@ -1,7 +1,7 @@
 //! Reading embedded Metadata and Cover images out of Format files. Done once
 //! at Import; afterwards the database is the source of truth (ADR 0003).
 
-mod epub;
+pub(crate) mod epub;
 mod pdf;
 
 use std::path::Path;
