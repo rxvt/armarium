@@ -31,6 +31,41 @@ pub fn format_file_name(metadata: &Metadata, kind: FormatKind) -> String {
 
 pub const COVER_FILE_NAME: &str = "cover.jpg";
 
+const DEVICE_TAG_PREFIX: &str = "[armarium-";
+
+/// The name of a Book's copy on a Device, tagged with its id so it can be
+/// found again ([ADR 0005]), e.g. `Dune - Frank Herbert [armarium-42].azw3`.
+///
+/// [ADR 0005]: ../../docs/adr/0005-device-books-matched-by-filename-tag.md
+#[cfg_attr(not(test), expect(dead_code, reason = "Device::send will use it"))]
+pub fn device_file_name(metadata: &Metadata, id: BookId, extension: &str) -> String {
+    format!(
+        "{} - {} {DEVICE_TAG_PREFIX}{}].{extension}",
+        title_part(metadata),
+        author_part(metadata),
+        id.0
+    )
+}
+
+/// Whether `file_name` is a partial copy left by an interrupted Send:
+/// `.armarium-<id>.part`. The leading dot keeps the Kindle from indexing it.
+pub fn is_device_part_file(file_name: &str) -> bool {
+    file_name
+        .strip_prefix(".armarium-")
+        .and_then(|rest| rest.strip_suffix(".part"))
+        .is_some_and(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// The Book id tagged in a file name made by [`device_file_name`], if any.
+pub fn book_id_in(file_name: &str) -> Option<BookId> {
+    let (stem, _extension) = file_name.rsplit_once('.')?;
+    let (_, tag) = stem.strip_suffix(']')?.rsplit_once(DEVICE_TAG_PREFIX)?;
+    if tag.is_empty() || !tag.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    tag.parse().ok().map(BookId)
+}
+
 fn title_part(metadata: &Metadata) -> String {
     sanitize(&metadata.title).unwrap_or_else(|| "Untitled".into())
 }
@@ -95,6 +130,47 @@ mod tests {
             format_file_name(&m, FormatKind::Epub),
             "Untitled - Unknown.epub"
         );
+    }
+
+    #[test]
+    fn device_file_names_carry_the_book_id() {
+        let m = metadata("Dune", &["Frank Herbert"]);
+        let name = device_file_name(&m, BookId(42), "azw3");
+        assert_eq!(name, "Dune - Frank Herbert [armarium-42].azw3");
+        assert_eq!(book_id_in(&name), Some(BookId(42)));
+    }
+
+    #[test]
+    fn device_file_names_round_trip_awkward_titles() {
+        let long = "é".repeat(200);
+        for (title, author) in [
+            ("Notes [armarium-7]", "Anon"),
+            (long.as_str(), long.as_str()),
+            ("Война и мир", "Лев Толстой"),
+            ("Dr. Who?", "..."),
+        ] {
+            let name = device_file_name(&metadata(title, &[author]), BookId(i64::MAX), "pdf");
+            assert!(name.len() <= 255, "{name}");
+            assert_eq!(book_id_in(&name), Some(BookId(i64::MAX)), "{name}");
+        }
+    }
+
+    #[test]
+    fn untagged_and_look_alike_names_have_no_book_id() {
+        for name in [
+            "Dune - Frank Herbert.azw3",
+            "Dune [armarium-].azw3",
+            "Dune [armarium-x].azw3",
+            "Dune [armarium-+42].azw3",
+            "Dune [armarium--1].azw3",
+            "Dune [armarium-42]",
+            "Dune [armarium-42] copy.azw3",
+            "Dune [Armarium-42].azw3",
+            "Dune (armarium-42).azw3",
+            "Dune [armarium-99999999999999999999].azw3",
+        ] {
+            assert_eq!(book_id_in(name), None, "{name}");
+        }
     }
 
     #[test]

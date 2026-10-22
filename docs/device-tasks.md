@@ -2,7 +2,7 @@
 
 The work behind the Kindle design in [v1-plan.md](./v1-plan.md#later), split into slices that each end in something testable. Vocabulary is in [GLOSSARY.md](../GLOSSARY.md); see also [ADR 0004](./adr/0004-device-copies-are-not-formats.md), [ADR 0005](./adr/0005-device-books-matched-by-filename-tag.md) and [ADR 0007](./adr/0007-epub-to-azw3-port-of-calibre.md).
 
-Already done: EPUB to AZW3 conversion, `armarium_core::azw3::convert` (try it with `just azw3 BOOK.epub OUT.azw3`).
+Already done: EPUB to AZW3 conversion, `armarium_core::azw3::convert` (try it with `just azw3 BOOK.epub OUT.azw3`), and slice 1, `armarium_core::device`. Partial copies are named `.armarium-<id>.part`.
 
 ```
 1 ──► 2

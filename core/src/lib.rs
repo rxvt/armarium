@@ -3,6 +3,7 @@
 pub mod azw3;
 pub mod cover;
 pub mod db;
+pub mod device;
 mod edit;
 mod error;
 pub mod extract;
