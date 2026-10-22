@@ -1,5 +1,6 @@
 //! The main window: header bar, cover grid and list, details sidebar,
-//! Import, opening and deleting Books, and the connected Device.
+//! Import, opening and deleting Books, and the connected Device and Sending
+//! Books to it.
 
 use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::HashSet;
@@ -11,6 +12,7 @@ use std::time::Duration;
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use armarium_core::Library;
+use armarium_core::device::{Device, SendOutcome, SendReport, Stage};
 use armarium_core::import::{ImportReport, Outcome};
 use armarium_core::model::{Book, BookId, Format, FormatKind, Metadata};
 use gtk::{gdk, gio, glib};
@@ -74,6 +76,7 @@ mod imp {
         pub grid_factory: OnceCell<gtk::SignalListItemFactory>,
         pub settings: OnceCell<Settings>,
         pub importing: Cell<bool>,
+        pub sending: Cell<bool>,
         /// Set when the details sidebar was toggled off with I.
         pub details_hidden: Cell<bool>,
         pub device_watch: OnceCell<DeviceWatch>,
@@ -140,6 +143,7 @@ mod imp {
             }
             klass.install_action("win.delete", None, |win, _, _| win.confirm_delete_books());
             klass.install_action("win.eject-device", None, |win, _, _| win.eject_device());
+            klass.install_action("win.send-to-device", None, |win, _, _| win.send_selected());
             klass.install_action(
                 "win.delete-format",
                 Some(glib::VariantTy::STRING),
@@ -313,6 +317,12 @@ impl Window {
             self.action_set_enabled(action, single.is_some());
         }
         self.action_set_enabled("win.delete", count > 0);
+        let connected = imp.device.borrow().is_some();
+        imp.details.set_can_send(connected && count > 0);
+        self.action_set_enabled(
+            "win.send-to-device",
+            connected && count > 0 && !imp.sending.get() && !imp.importing.get(),
+        );
     }
 
     fn toggle_details(&self) {
@@ -592,12 +602,17 @@ impl Window {
             self.toast("An import is already running");
             return;
         }
+        if imp.sending.get() {
+            self.toast("Wait for the books to be sent to the Kindle");
+            return;
+        }
         let Some(root) = self.with_library(|lib| lib.root().to_owned()) else {
             return;
         };
         imp.importing.set(true);
         self.action_set_enabled("win.import-files", false);
         self.action_set_enabled("win.import-folder", false);
+        self.update_selection();
 
         let progress = Arc::new(Mutex::new((0usize, 0usize)));
         imp.progress_bar.set_fraction(0.0);
@@ -684,25 +699,29 @@ impl Window {
     }
 
     fn show_import_details(&self, report: &ImportReport) {
-        let list = gtk::ListBox::builder()
-            .selection_mode(gtk::SelectionMode::None)
-            .css_classes(["boxed-list"])
-            .build();
-        for (path, outcome) in &report.items {
+        let rows = report.items.iter().map(|(path, outcome)| {
             let status = match outcome {
                 Outcome::Added(_) => "Added".to_owned(),
                 Outcome::Merged(_) => "Added as a new format".to_owned(),
                 Outcome::Skipped(reason) => format!("Skipped: {reason}"),
             };
-            let name = path
-                .file_name()
-                .unwrap_or(path.as_os_str())
-                .to_string_lossy();
-            let row = adw::ActionRow::builder()
-                .title(glib::markup_escape_text(&name))
+            let name = path.file_name().unwrap_or(path.as_os_str());
+            adw::ActionRow::builder()
+                .title(glib::markup_escape_text(&name.to_string_lossy()))
                 .subtitle(glib::markup_escape_text(&status))
                 .tooltip_text(path.display().to_string())
-                .build();
+                .build()
+        });
+        self.show_details_dialog("Import Details", rows);
+    }
+
+    /// A dialog listing what happened to each item of an Import or Send.
+    fn show_details_dialog(&self, heading: &str, rows: impl IntoIterator<Item = adw::ActionRow>) {
+        let list = gtk::ListBox::builder()
+            .selection_mode(gtk::SelectionMode::None)
+            .css_classes(["boxed-list"])
+            .build();
+        for row in rows {
             list.append(&row);
         }
         let scrolled = gtk::ScrolledWindow::builder()
@@ -712,7 +731,7 @@ impl Window {
             .max_content_height(420)
             .build();
         let dialog = adw::AlertDialog::builder()
-            .heading("Import Details")
+            .heading(heading)
             .extra_child(&scrolled)
             .build();
         dialog.add_response("close", "_Close");
@@ -854,6 +873,15 @@ impl Window {
             book.append(Some("Edit Metadata…"), Some("win.edit"));
             book.append(Some("Show in Files"), Some("win.show-in-files"));
             menu.append_section(None, &book);
+        }
+        if self.imp().device.borrow().is_some() {
+            let send = gio::Menu::new();
+            let label = match books.len() {
+                1 => "Send to Kindle".to_owned(),
+                n => format!("Send {n} Books to Kindle"),
+            };
+            send.append(Some(&label), Some("win.send-to-device"));
+            menu.append_section(None, &send);
         }
         let delete = gio::Menu::new();
         let label = match books.len() {
@@ -1059,7 +1087,10 @@ impl Window {
                 .set_tooltip_text(Some(&format!("Eject {}", c.name)));
         }
         imp.device_indicator.set_visible(connected.is_some());
-        self.action_set_enabled("win.eject-device", connected.is_some());
+        self.action_set_enabled(
+            "win.eject-device",
+            connected.is_some() && !imp.sending.get(),
+        );
         drop(connected);
         imp.on_device.replace(on_device);
         self.update_ticks();
@@ -1103,6 +1134,139 @@ impl Window {
         } else {
             mount.unmount_with_operation(flags, Some(&operation), gio::Cancellable::NONE, done);
         }
+    }
+
+    /// Sends the selected Books to the Device on a worker thread with its
+    /// own database connection, showing progress, then shows a summary toast.
+    /// Eject waits until it finishes.
+    fn send_selected(&self) {
+        let imp = self.imp();
+        if imp.sending.get() || imp.importing.get() {
+            return;
+        }
+        let books: Vec<Book> = self
+            .selected_books()
+            .iter()
+            .map(|obj| obj.book().clone())
+            .collect();
+        let Some(root) = self.with_library(|lib| lib.root().to_owned()) else {
+            return;
+        };
+        let Some(device) = imp.device.borrow().as_ref().map(|c| c.device.clone()) else {
+            return;
+        };
+        if books.is_empty() {
+            return;
+        }
+        // The Kindle may have gone without its mount being removed yet.
+        if Device::at(device.root()).is_none() {
+            self.toast("Kindle disconnected");
+            return;
+        }
+        imp.sending.set(true);
+        self.action_set_enabled("win.eject-device", false);
+        self.update_selection();
+
+        // Converting takes the first half of the bar and copying the second.
+        let progress = Arc::new(Mutex::new(0.0));
+        imp.progress_bar.set_fraction(0.0);
+        imp.progress_bar.set_visible(true);
+        let ticker = glib::timeout_add_local(
+            Duration::from_millis(100),
+            glib::clone!(
+                #[weak(rename_to = win)]
+                self,
+                #[strong]
+                progress,
+                #[upgrade_or]
+                glib::ControlFlow::Break,
+                move || {
+                    win.imp()
+                        .progress_bar
+                        .set_fraction(*progress.lock().unwrap());
+                    glib::ControlFlow::Continue
+                }
+            ),
+        );
+
+        let titles: Vec<(BookId, String)> = books
+            .iter()
+            .map(|book| (book.id, book.metadata.title.clone()))
+            .collect();
+        glib::spawn_future_local(glib::clone!(
+            #[weak(rename_to = win)]
+            self,
+            async move {
+                let result = gio::spawn_blocking(move || {
+                    let library = Library::open(root)?;
+                    device.send(&library, &books, |p| {
+                        let half = match p.stage {
+                            Stage::Converting => 0.0,
+                            Stage::Copying => 0.5,
+                        };
+                        *progress.lock().unwrap() = half + p.done as f64 / p.total as f64 / 2.0;
+                    })
+                })
+                .await;
+                ticker.remove();
+                let imp = win.imp();
+                imp.progress_bar.set_visible(false);
+                imp.sending.set(false);
+                win.refresh_device();
+                match result {
+                    Ok(Ok(report)) => win.show_send_summary(report, titles),
+                    Ok(Err(e)) => win.toast(&format!("Nothing was sent: {e}")),
+                    Err(_) => win.toast("Sending failed unexpectedly"),
+                }
+            }
+        ));
+    }
+
+    /// `titles` names the Books in `report`.
+    fn show_send_summary(&self, report: SendReport, titles: Vec<(BookId, String)>) {
+        let failed = report
+            .items
+            .iter()
+            .filter(|(_, outcome)| matches!(outcome, SendOutcome::Failed(_)))
+            .count();
+        let sent = report.items.len() - failed;
+        let mut parts = Vec::new();
+        if sent > 0 {
+            parts.push(format!("{sent} sent"));
+        }
+        if failed > 0 {
+            parts.push(format!("{failed} failed"));
+        }
+        let toast = adw::Toast::builder()
+            .title(parts.join(" · "))
+            .timeout(8)
+            .build();
+        toast.set_button_label(Some("Details"));
+        let report = Rc::new((report, titles));
+        toast.connect_button_clicked(glib::clone!(
+            #[weak(rename_to = win)]
+            self,
+            move |_| win.show_send_details(&report.0, &report.1)
+        ));
+        self.imp().toast_overlay.add_toast(toast);
+    }
+
+    fn show_send_details(&self, report: &SendReport, titles: &[(BookId, String)]) {
+        let rows = report.items.iter().map(|(id, outcome)| {
+            let title = titles
+                .iter()
+                .find(|(t, _)| t == id)
+                .map_or("", |(_, title)| title);
+            let status = match outcome {
+                SendOutcome::Sent => "Sent".to_owned(),
+                SendOutcome::Failed(reason) => format!("Failed: {reason}"),
+            };
+            adw::ActionRow::builder()
+                .title(glib::markup_escape_text(title))
+                .subtitle(glib::markup_escape_text(&status))
+                .build()
+        });
+        self.show_details_dialog("Send Details", rows);
     }
 
     fn confirm_delete_books(&self) {

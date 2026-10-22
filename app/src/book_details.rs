@@ -1,6 +1,7 @@
 //! The details sidebar for the selected Book: Cover, title and authors,
-//! whether it is on the connected Device, Formats with Open and Delete buttons, and the rest of its Metadata. With
-//! no single Book selected it says so instead.
+//! whether it is on the connected Device, Formats with Open and Delete
+//! buttons, and the rest of its Metadata. With no single Book selected it
+//! says so instead.
 
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -33,6 +34,10 @@ mod imp {
         pub authors_label: TemplateChild<gtk::Label>,
         #[template_child]
         pub on_device_box: TemplateChild<gtk::Box>,
+        #[template_child]
+        pub send_button: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub send_many_button: TemplateChild<gtk::Button>,
         #[template_child]
         pub formats_list: TemplateChild<gtk::ListBox>,
         #[template_child]
@@ -159,6 +164,14 @@ impl BookDetails {
         let description = m.description.as_deref().unwrap_or_default();
         imp.description_label.set_label(description);
         imp.description_group.set_visible(!description.is_empty());
+    }
+
+    /// Shows or hides the Send to Kindle buttons, which fire
+    /// `win.send-to-device` on the selection.
+    pub fn set_can_send(&self, can_send: bool) {
+        let imp = self.imp();
+        imp.send_button.set_visible(can_send);
+        imp.send_many_button.set_visible(can_send);
     }
 
     /// Shows that `count` Books (none, or several) are selected.
