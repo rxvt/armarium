@@ -7,9 +7,11 @@ use std::cell::{Cell, RefCell};
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use armarium_core::model::{Author, Book, FieldEdit, Metadata, MetadataEdit};
+use armarium_core::suggest::Suggestions;
 use gtk::glib;
 
 use crate::metadata_dialog::AuthorRows;
+use crate::suggestion_popover;
 
 /// Saves the edit to every Book. An `Err` is shown in the dialog, which
 /// stays open.
@@ -183,7 +185,8 @@ glib::wrapper! {
 }
 
 impl BulkMetadataDialog {
-    pub fn new(books: &[Book], on_save: SaveFn) -> BulkMetadataDialog {
+    /// `series` are the Library's Series names, offered as the user types one.
+    pub fn new(books: &[Book], series: Suggestions, on_save: SaveFn) -> BulkMetadataDialog {
         let obj: BulkMetadataDialog = glib::Object::new();
         let imp = obj.imp();
         obj.set_title(&format!("Edit {} Books", books.len()));
@@ -199,6 +202,7 @@ impl BulkMetadataDialog {
             Initial::Mixed => "Mixed",
         });
         imp.initial_authors.replace(Some(authors));
+        suggestion_popover::attach(&imp.series_row, series);
 
         let fields = [
             (&*imp.series_row, Initial::of(books, |m| m.series.clone())),

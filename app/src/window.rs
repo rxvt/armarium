@@ -1133,13 +1133,7 @@ impl Window {
         let cover = self.with_library(|lib| lib.cover_path(&book)).flatten();
         let thumbnails = self.imp().thumbnails.borrow().clone().unwrap();
         let id = book.id;
-        let names: Vec<String> = self
-            .store()
-            .iter::<BookObject>()
-            .flatten()
-            .filter_map(|obj| obj.book().metadata.series.clone())
-            .collect();
-        let series = Suggestions::new(names.iter().map(String::as_str));
+        let series = self.series_suggestions();
         let on_save = Box::new(glib::clone!(
             #[weak(rename_to = win)]
             self,
@@ -1160,7 +1154,18 @@ impl Window {
             || Ok(()),
             move |edit| win.save_metadata_edit(&ids, &edit)
         ));
-        BulkMetadataDialog::new(&books, on_save).present(Some(self));
+        BulkMetadataDialog::new(&books, self.series_suggestions(), on_save).present(Some(self));
+    }
+
+    /// The Library's Series names, for the Metadata dialogs to suggest.
+    fn series_suggestions(&self) -> Suggestions {
+        let names: Vec<String> = self
+            .store()
+            .iter::<BookObject>()
+            .flatten()
+            .filter_map(|obj| obj.book().metadata.series.clone())
+            .collect();
+        Suggestions::new(names.iter().map(String::as_str))
     }
 
     /// Makes `edit` to each Book, then reloads. A failure stops the rest and
