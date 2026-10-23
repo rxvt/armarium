@@ -104,6 +104,7 @@ mod tests {
         let values = ["Discworld", "The Lord of the Rings", "Brontë Classics"];
         assert_eq!(suggest(&values, "RING"), ["The Lord of the Rings"]);
         assert_eq!(suggest(&values, "bronte"), ["Brontë Classics"]);
+        assert_eq!(suggest(&values, "Bronte\u{308}"), ["Brontë Classics"]);
         assert!(suggest(&values, "dune").is_empty());
     }
 
