@@ -14,7 +14,7 @@ use adw::subclass::prelude::*;
 use armarium_core::Library;
 use armarium_core::device::{Device, SendOutcome, SendReport, Stage};
 use armarium_core::import::{ImportReport, Outcome};
-use armarium_core::model::{Book, BookId, Format, FormatKind, Metadata};
+use armarium_core::model::{Book, BookId, Format, FormatKind, Metadata, SortKey};
 use gtk::{gdk, gio, glib};
 
 use crate::book_details::BookDetails;
@@ -71,6 +71,10 @@ mod imp {
         pub filter: RefCell<Option<gtk::CustomFilter>>,
         pub filtered: RefCell<Option<gtk::FilterListModel>>,
         pub selection: RefCell<Option<gtk::MultiSelection>>,
+        /// The list's sortable columns, which hold the order for both views.
+        pub sort_columns: RefCell<Vec<(SortKey, gtk::ColumnViewColumn)>>,
+        /// The key the views are sorted by.
+        pub sort_key: Cell<Option<SortKey>>,
         pub thumbnails: RefCell<Option<Rc<Thumbnails>>>,
         pub cover_width: Cell<i32>,
         pub grid_factory: OnceCell<gtk::SignalListItemFactory>,
@@ -418,10 +422,8 @@ impl Window {
             self,
             move |widget, cell| win.attach_context_menu(widget, cell.upcast_ref())
         ));
-        let date_added =
-            book_list::add_columns(&imp.column_view, thumbnails, cover_path, setup_cell);
-        imp.column_view
-            .sort_by_column(Some(&date_added), gtk::SortType::Descending);
+        let columns = book_list::add_columns(&imp.column_view, thumbnails, cover_path, setup_cell);
+        self.setup_sort(columns);
         imp.column_view.connect_activate(glib::clone!(
             #[weak(rename_to = win)]
             self,
@@ -438,6 +440,122 @@ impl Window {
                 win.update_page();
             }
         ));
+    }
+
+    /// The Sort button's `win.sort-by` and `win.sort-order` and the list's
+    /// column headers choose one order, which settings remember. It starts
+    /// at Date added, newest first.
+    fn setup_sort(&self, columns: Vec<(SortKey, gtk::ColumnViewColumn)>) {
+        let imp = self.imp();
+        let (key, descending) = self
+            .settings()
+            .sort()
+            .and_then(|(key, descending)| Some((SortKey::parse(&key)?, descending)))
+            .unwrap_or((SortKey::DateAdded, true));
+        imp.sort_columns.replace(columns);
+
+        let sort_by = gio::SimpleAction::new_stateful(
+            "sort-by",
+            Some(glib::VariantTy::STRING),
+            &key.as_str().to_variant(),
+        );
+        sort_by.connect_change_state(glib::clone!(
+            #[weak(rename_to = win)]
+            self,
+            move |_, value| {
+                if let Some(key) = value
+                    .and_then(|v| v.get::<String>())
+                    .and_then(|s| SortKey::parse(&s))
+                {
+                    win.sort_by(key, key.starts_descending());
+                }
+            }
+        ));
+        let sort_order = gio::SimpleAction::new_stateful(
+            "sort-order",
+            Some(glib::VariantTy::STRING),
+            &order_name(descending).to_variant(),
+        );
+        sort_order.connect_change_state(glib::clone!(
+            #[weak(rename_to = win)]
+            self,
+            move |_, value| {
+                if let (Some(order), Some(key)) = (
+                    value.and_then(|v| v.get::<String>()),
+                    win.imp().sort_key.get(),
+                ) {
+                    win.sort_by(key, order == order_name(true));
+                }
+            }
+        ));
+        self.add_action(&sort_by);
+        self.add_action(&sort_order);
+
+        if let Some(sorter) = imp
+            .column_view
+            .sorter()
+            .and_downcast::<gtk::ColumnViewSorter>()
+        {
+            sorter.connect_changed(glib::clone!(
+                #[weak(rename_to = win)]
+                self,
+                move |sorter, _| win.sort_changed(sorter)
+            ));
+        }
+        imp.sort_key.set(Some(key));
+        self.sort_by(key, descending);
+    }
+
+    fn sort_by(&self, key: SortKey, descending: bool) {
+        let column = self
+            .imp()
+            .sort_columns
+            .borrow()
+            .iter()
+            .find(|(k, _)| *k == key)
+            .map(|(_, c)| c.clone());
+        let order = if descending {
+            gtk::SortType::Descending
+        } else {
+            gtk::SortType::Ascending
+        };
+        self.imp()
+            .column_view
+            .sort_by_column(column.as_ref(), order);
+    }
+
+    /// Follows a new order, from the Sort button or a column header, into
+    /// the button's actions and settings. A header click on a new column
+    /// always sorts ascending, so one for a key that starts descending is
+    /// flipped.
+    fn sort_changed(&self, sorter: &gtk::ColumnViewSorter) {
+        let imp = self.imp();
+        let Some(column) = sorter.primary_sort_column() else {
+            return;
+        };
+        let Some(key) = imp
+            .sort_columns
+            .borrow()
+            .iter()
+            .find(|(_, c)| *c == column)
+            .map(|(k, _)| *k)
+        else {
+            return;
+        };
+        let descending = sorter.primary_sort_order() == gtk::SortType::Descending;
+        if imp.sort_key.replace(Some(key)) != Some(key) && key.starts_descending() && !descending {
+            self.sort_by(key, true);
+            return;
+        }
+        for (name, state) in [
+            ("sort-by", key.as_str()),
+            ("sort-order", order_name(descending)),
+        ] {
+            if let Some(action) = self.lookup_action(name).and_downcast::<gio::SimpleAction>() {
+                action.set_state(&state.to_variant());
+            }
+        }
+        self.settings().set_sort(key.as_str(), descending);
     }
 
     fn setup_search(&self) {
@@ -1339,6 +1457,15 @@ impl Window {
             ),
         );
         dialog.present(Some(self));
+    }
+}
+
+/// The `win.sort-order` state for a direction.
+fn order_name(descending: bool) -> &'static str {
+    if descending {
+        "descending"
+    } else {
+        "ascending"
     }
 }
 

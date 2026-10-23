@@ -113,7 +113,7 @@ Merging is automatic, never prompted.
 ## UI
 
 - **Empty state**: status page with an "Import books" button.
-- **Header bar**: Import button (left), search entry (centre), grid/list toggle and primary menu with Preferences and About (right).
+- **Header bar**: Import and Sort buttons (left), search entry (centre), grid/list toggle and primary menu with Preferences and About (right).
 - **Grid**: virtualized cover grid; cover size adjustable with Ctrl+scroll / Ctrl+±, remembered across sessions.
 - **List**: columns for Cover, Title, Authors, Series, Formats, Date added; sortable.
 - **Selection**: single selection shows the details sidebar (Cover, Metadata, Formats with Open buttons, Edit). Ctrl/Shift multi-select is allowed for delete only.

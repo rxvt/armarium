@@ -21,6 +21,13 @@ template $ArmariumWindow: Adw.ApplicationWindow {
         }
 
         [start]
+        Gtk.MenuButton {
+          icon-name: "view-sort-descending-symbolic";
+          menu-model: sort_menu;
+          tooltip-text: _("Sort");
+        }
+
+        [start]
         Gtk.Box device_indicator {
           spacing: 6;
           margin-start: 6;
@@ -182,6 +189,58 @@ menu import_menu {
     item {
       label: _("Import _Folder…");
       action: "win.import-folder";
+    }
+  }
+}
+
+menu sort_menu {
+  section {
+    label: _("Sort By");
+
+    item {
+      label: _("_Title");
+      action: "win.sort-by";
+      target: "title";
+    }
+
+    item {
+      label: _("_Authors");
+      action: "win.sort-by";
+      target: "authors";
+    }
+
+    item {
+      label: _("_Series");
+      action: "win.sort-by";
+      target: "series";
+    }
+
+    item {
+      label: _("_Formats");
+      action: "win.sort-by";
+      target: "formats";
+    }
+
+    item {
+      label: _("_Date Added");
+      action: "win.sort-by";
+      target: "date-added";
+    }
+  }
+
+  section {
+    label: _("Order");
+
+    item {
+      label: _("A_scending");
+      action: "win.sort-order";
+      target: "ascending";
+    }
+
+    item {
+      label: _("D_escending");
+      action: "win.sort-order";
+      target: "descending";
     }
   }
 }

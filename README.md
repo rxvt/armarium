@@ -7,7 +7,7 @@ Armarium collects your EPUBs and PDFs into one managed folder, keeps their metad
 ## Features
 
 - **Import** files or whole folders. Files are copied, never moved. Duplicates are skipped, and a PDF and EPUB of the same book are merged into one Book.
-- **Browse** as a resizable cover grid or a sortable list.
+- **Browse** as a resizable cover grid or a list, sorted by title, author, series, format or date added.
 - **Search** as you type, ignoring case and accents ("bronte" finds "Brontë").
 - **Edit** metadata (title, authors, series, publisher, ISBN and more) and replace covers.
 - **Open** books in your default reader, or show them in your file manager.

@@ -20,28 +20,40 @@ pub type SetupCell = Rc<dyn Fn(&gtk::Widget, &gtk::ColumnViewCell)>;
 
 const COVER_WIDTH: i32 = 32;
 
-/// Adds the columns to `view` and returns the Date added column, which the
-/// list starts sorted by.
+/// Adds the columns to `view` and returns the sortable ones with their keys.
 pub fn add_columns(
     view: &gtk::ColumnView,
     thumbnails: Rc<Thumbnails>,
     cover_path: CoverPath,
     setup: SetupCell,
-) -> gtk::ColumnViewColumn {
+) -> Vec<(SortKey, gtk::ColumnViewColumn)> {
     view.append_column(&cover_column(thumbnails, cover_path, setup.clone()));
     let text_column =
         |title: &str, key, text: fn(&Book) -> String| text_column(title, key, text, setup.clone());
     let title = text_column("Title", SortKey::Title, |b| b.metadata.title.clone());
     title.set_expand(true);
-    view.append_column(&title);
     let authors = text_column("Authors", SortKey::Authors, authors_line);
     authors.set_expand(true);
-    view.append_column(&authors);
-    view.append_column(&text_column("Series", SortKey::Series, series_line));
-    view.append_column(&text_column("Formats", SortKey::Formats, formats_line));
-    let date = text_column("Date Added", SortKey::DateAdded, date_line);
-    view.append_column(&date);
-    date
+    let columns = vec![
+        (SortKey::Title, title),
+        (SortKey::Authors, authors),
+        (
+            SortKey::Series,
+            text_column("Series", SortKey::Series, series_line),
+        ),
+        (
+            SortKey::Formats,
+            text_column("Formats", SortKey::Formats, formats_line),
+        ),
+        (
+            SortKey::DateAdded,
+            text_column("Date Added", SortKey::DateAdded, date_line),
+        ),
+    ];
+    for (_, column) in &columns {
+        view.append_column(column);
+    }
+    columns
 }
 
 fn sorter(key: SortKey) -> gtk::CustomSorter {
