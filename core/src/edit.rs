@@ -162,14 +162,14 @@ impl Library {
         Ok(())
     }
 
-    fn existing_book(&self, id: BookId) -> Result<Book> {
+    pub(crate) fn existing_book(&self, id: BookId) -> Result<Book> {
         self.book(id)?
             .ok_or_else(|| Error::Invalid(format!("no book with id {}", id.0)))
     }
 }
 
 /// Removes an author folder once its last Book has gone.
-fn remove_if_empty(dir: Option<&Path>) {
+pub(crate) fn remove_if_empty(dir: Option<&Path>) {
     if let Some(dir) = dir {
         let _ = fs::remove_dir(dir); // fails, harmlessly, unless empty
     }

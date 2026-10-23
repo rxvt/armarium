@@ -191,6 +191,38 @@ impl Database {
         tx.commit()
     }
 
+    /// Merges `other` into `keep`: each Format in `moves` becomes `keep`'s
+    /// under its new file name, `keep`'s Date Added becomes the earlier of
+    /// the two, and `other` is removed with any Formats left on it.
+    /// `finish` runs before the change is committed; if it fails, nothing
+    /// is changed.
+    pub fn merge_book<E: From<Error>>(
+        &self,
+        keep: BookId,
+        other: BookId,
+        moves: &[(FormatId, String)],
+        finish: impl FnOnce() -> std::result::Result<(), E>,
+    ) -> std::result::Result<(), E> {
+        let tx = self.conn.unchecked_transaction()?;
+        for (format, file_name) in moves {
+            tx.execute(
+                "UPDATE formats SET book_id = ?1, file_name = ?2 WHERE id = ?3 AND book_id = ?4",
+                params![keep.0, file_name, format.0, other.0],
+            )?;
+        }
+        tx.execute(
+            "UPDATE books SET date_added = min(date_added,
+                 (SELECT date_added FROM books WHERE id = ?2))
+             WHERE id = ?1",
+            params![keep.0, other.0],
+        )?;
+        tx.execute("DELETE FROM books WHERE id = ?1", [other.0])?;
+        remove_orphan_authors(&tx)?;
+        finish()?;
+        tx.commit()?;
+        Ok(())
+    }
+
     /// The Book whose title and first author match `metadata`'s, if any.
     pub fn find_matching_book(&self, metadata: &Metadata) -> Result<Option<BookId>> {
         self.conn
@@ -556,5 +588,57 @@ mod tests {
             .unwrap();
         assert_eq!(authors, 1);
         assert!(db.book(other).unwrap().is_some());
+    }
+
+    #[test]
+    fn merge_book_moves_formats_and_keeps_the_earliest_date_added() {
+        let db = Database::open_in_memory().unwrap();
+        let keep = book_by(&db, "Dune", &["Frank Herbert"], 20);
+        let other = book_by(&db, "Dune_ Fr", &["Unknown"], 10);
+        db.add_format(keep, FormatKind::Epub, "keep.epub", 1)
+            .unwrap();
+        let pdf = db
+            .add_format(other, FormatKind::Pdf, "other.pdf", 2)
+            .unwrap();
+        db.add_format(other, FormatKind::Epub, "other.epub", 3)
+            .unwrap();
+
+        db.merge_book(keep, other, &[(pdf, "keep.pdf".into())], || {
+            Ok::<_, Error>(())
+        })
+        .unwrap();
+
+        let book = db.book(keep).unwrap().unwrap();
+        assert_eq!(book.date_added, 10);
+        let names: Vec<_> = book.formats.iter().map(|f| f.file_name.as_str()).collect();
+        assert_eq!(names, ["keep.epub", "keep.pdf"]);
+        assert_eq!(db.book(other).unwrap(), None);
+        let authors: Vec<String> = db
+            .conn
+            .prepare("SELECT name FROM authors")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_>>()
+            .unwrap();
+        assert_eq!(authors, ["Frank Herbert"]);
+    }
+
+    #[test]
+    fn a_failed_merge_book_changes_nothing() {
+        let db = Database::open_in_memory().unwrap();
+        let keep = book_by(&db, "Dune", &[], 20);
+        let other = book_by(&db, "Dune_ Fr", &[], 10);
+        let pdf = db
+            .add_format(other, FormatKind::Pdf, "other.pdf", 2)
+            .unwrap();
+        let before = db.books().unwrap();
+
+        let result = db.merge_book(keep, other, &[(pdf, "keep.pdf".into())], || {
+            Err(crate::Error::Invalid("no".into()))
+        });
+
+        assert!(result.is_err());
+        assert_eq!(db.books().unwrap(), before);
     }
 }

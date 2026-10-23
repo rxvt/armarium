@@ -10,12 +10,24 @@ template $ArmariumBookDetails: Adw.Bin {
         icon-name: "accessories-dictionary-symbolic";
 
         child: Gtk.Box {
+          orientation: vertical;
           halign: center;
+          homogeneous: true;
           spacing: 12;
 
           Gtk.Button edit_many_button {
             use-underline: true;
             action-name: "win.edit";
+            visible: false;
+
+            styles [
+              "pill",
+            ]
+          }
+
+          Gtk.Button merge_many_button {
+            use-underline: true;
+            action-name: "win.merge";
             visible: false;
 
             styles [
