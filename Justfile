@@ -120,6 +120,13 @@ reset-scratch:
 wt recipe="scratch" *args:
     #!/usr/bin/env sh
     set -eu
-    dir=$(git worktree list --porcelain | sed -n 's/^worktree //p' | fzf --prompt="worktree> ") || exit 0
+    status=0
+    dir=$(git worktree list --porcelain | sed -n 's/^worktree //p' | fzf --prompt="worktree> ") || status=$?
+    # fzf exits 1 for no match and 130 when cancelled; anything else is a real failure.
+    case $status in
+        0) ;;
+        1 | 130) exit 0 ;;
+        *) exit "$status" ;;
+    esac
     shift
     just -f "$dir/Justfile" {{ quote(recipe) }} "$@"
