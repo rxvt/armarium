@@ -8,9 +8,11 @@ use std::rc::Rc;
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use armarium_core::model::{Author, Book, Metadata};
+use armarium_core::suggest::Suggestions;
 use armarium_core::text;
 use gtk::{gio, glib};
 
+use crate::suggestion_popover;
 use crate::thumbnails::Thumbnails;
 
 /// Saves the edited Metadata and, if one was chosen, the new Cover image.
@@ -189,8 +191,10 @@ glib::wrapper! {
 }
 
 impl MetadataDialog {
+    /// `series` are the Library's Series names, offered as the user types one.
     pub fn new(
         book: &Book,
+        series: Suggestions,
         cover: Option<PathBuf>,
         thumbnails: &Rc<Thumbnails>,
         on_save: SaveFn,
@@ -204,6 +208,7 @@ impl MetadataDialog {
         }
         imp.series_row
             .set_text(m.series.as_deref().unwrap_or_default());
+        suggestion_popover::attach(&imp.series_row, series);
         imp.series_index_row
             .set_text(&m.series_index.map(|i| i.to_string()).unwrap_or_default());
         imp.publisher_row

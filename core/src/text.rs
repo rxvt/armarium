@@ -5,13 +5,24 @@
 ///
 /// Covers Latin-1 Supplement and Latin Extended-A, which is enough for the
 /// Western European names a personal library mostly holds; other scripts are
-/// only lowercased.
+/// only lowercased. Decomposed accents (combining marks after a Latin letter)
+/// are dropped too, so "e\u{301}" folds like "é".
 pub fn fold(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
+    let mut after_latin = false;
     for c in s.chars() {
+        if after_latin && matches!(c, '\u{300}'..='\u{36F}') {
+            continue;
+        }
         match strip_accent(c) {
-            Some(base) => out.push_str(base),
-            None => out.extend(c.to_lowercase()),
+            Some(base) => {
+                out.push_str(base);
+                after_latin = true;
+            }
+            None => {
+                out.extend(c.to_lowercase());
+                after_latin = c.is_ascii_alphabetic();
+            }
         }
     }
     out
@@ -137,6 +148,9 @@ mod tests {
         assert_eq!(fold("Straße"), "strasse");
         assert_eq!(fold("Łódź"), "lodz");
         assert_eq!(fold("Толстой"), "толстой");
+        assert_eq!(fold("Cafe\u{301}"), fold("Café"));
+        assert_eq!(fold("Cafe\u{301}"), "cafe");
+        assert_eq!(fold("Bronte\u{308}"), "bronte");
     }
 
     #[test]

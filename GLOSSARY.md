@@ -20,6 +20,10 @@ _Avoid_: File, edition, copy
 The descriptive facts about a Book (title, authors, series, etc.) as recorded by the Library, which may differ from what is embedded inside its Formats.
 _Avoid_: Tags, info, properties
 
+**Series**:
+A named sequence that a Book may belong to, at a Number in Series. A Book belongs to at most one Series.
+_Avoid_: Collection, saga, cycle
+
 **Cover**:
 The single image representing a Book in the Library.
 _Avoid_: Thumbnail, artwork
