@@ -114,3 +114,12 @@ screenshot out=(scratch / "screenshot.png"):
 reset-scratch:
     rm -rf {{ quote(scratch) }}
     mkdir -p {{ quote(scratch / "library") }}
+
+# Pick a git worktree and run a recipe there (default: open its scratch Library)
+[positional-arguments]
+wt recipe="scratch" *args:
+    #!/usr/bin/env sh
+    set -eu
+    dir=$(git worktree list | fzf --prompt="worktree> " | awk '{print $1}')
+    shift
+    just -f "$dir/Justfile" {{ quote(recipe) }} "$@"

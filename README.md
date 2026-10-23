@@ -48,6 +48,24 @@ just try DIR    # fresh scratch Library with books from DIR, then open the app
 
 Development builds use their own app id, settings, cache and Library, so they never touch the installed app's data.
 
+### Worktrees
+
+Work happens in git worktrees under `.claude/worktrees/` (see [AGENTS.md](AGENTS.md)). `just wt` picks one with [fzf](https://github.com/junegunn/fzf) and runs a recipe there, using that worktree's own build and scratch Library:
+
+```sh
+just wt         # open the chosen worktree's scratch Library
+just wt try DIR # any recipe, with its arguments
+just wt test
+```
+
+Only one development build can be open at a time for now ([#16](https://github.com/rxvt/armarium/issues/16)): launching a second one focuses the window already open.
+
+To `cd` into a worktree instead, add this to your shell config:
+
+```bash
+wt() { local d; d=$(git worktree list | fzf | awk '{print $1}') && cd "$d"; }
+```
+
 Vocabulary is defined in [GLOSSARY.md](GLOSSARY.md), the v1 scope in [docs/v1-plan.md](docs/v1-plan.md), and lasting decisions in [docs/adr/](docs/adr/).
 
 ## Credits
