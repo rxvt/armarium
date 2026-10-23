@@ -17,10 +17,75 @@ use crate::thumbnails::Thumbnails;
 /// An `Err` is shown in the dialog, which stays open.
 pub type SaveFn = Box<dyn Fn(Metadata, Option<PathBuf>) -> Result<(), String>>;
 
-/// One author's name and sort name rows.
-struct AuthorRows {
-    name: adw::EntryRow,
-    sort_name: adw::EntryRow,
+/// One author's name and sort name rows, with a button to remove them.
+pub struct AuthorRows {
+    pub name: adw::EntryRow,
+    pub sort_name: adw::EntryRow,
+    pub remove: gtk::Button,
+}
+
+impl AuthorRows {
+    /// Rows for `author`. The sort name follows the name as it is typed
+    /// until the user edits the sort name itself.
+    pub fn new(author: &Author) -> AuthorRows {
+        let name = adw::EntryRow::builder()
+            .title("Name")
+            .text(&author.name)
+            .build();
+        let sort_name = adw::EntryRow::builder()
+            .title("Sort As")
+            .text(&author.sort_name)
+            .build();
+        let remove = gtk::Button::builder()
+            .icon_name("list-remove-symbolic")
+            .tooltip_text("Remove Author")
+            .valign(gtk::Align::Center)
+            .css_classes(["flat"])
+            .build();
+        name.add_suffix(&remove);
+
+        let customised = Rc::new(Cell::new(
+            author.sort_name != text::author_sort_name(&author.name),
+        ));
+        let deriving = Rc::new(Cell::new(false));
+        name.connect_changed(glib::clone!(
+            #[weak]
+            sort_name,
+            #[strong]
+            customised,
+            #[strong]
+            deriving,
+            move |name| {
+                if !customised.get() {
+                    deriving.set(true);
+                    sort_name.set_text(&text::author_sort_name(&name.text()));
+                    deriving.set(false);
+                }
+            }
+        ));
+        sort_name.connect_changed(move |_| {
+            if !deriving.get() {
+                customised.set(true);
+            }
+        });
+        AuthorRows {
+            name,
+            sort_name,
+            remove,
+        }
+    }
+
+    /// The author as entered, or `None` while the name is empty.
+    pub fn author(&self) -> Option<Author> {
+        let name = self.name.text().trim().to_owned();
+        if name.is_empty() {
+            return None;
+        }
+        let sort_name = Some(self.sort_name.text().trim().to_owned())
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| text::author_sort_name(&name));
+        Some(Author { name, sort_name })
+    }
 }
 
 mod imp {
@@ -54,7 +119,7 @@ mod imp {
         #[template_child]
         pub description_view: TemplateChild<gtk::TextView>,
 
-        pub(super) authors: RefCell<Vec<AuthorRows>>,
+        pub authors: RefCell<Vec<AuthorRows>>,
         pub new_cover: RefCell<Option<PathBuf>>,
         pub on_save: RefCell<Option<SaveFn>>,
     }
@@ -169,50 +234,11 @@ impl MetadataDialog {
         obj
     }
 
-    /// Adds rows for `author`. The sort name follows the name as it is typed
-    /// until the user edits the sort name itself.
+    /// Adds rows for `author`.
     fn add_author(&self, author: &Author) -> adw::EntryRow {
-        let name = adw::EntryRow::builder()
-            .title("Name")
-            .text(&author.name)
-            .build();
-        let sort_name = adw::EntryRow::builder()
-            .title("Sort As")
-            .text(&author.sort_name)
-            .build();
-        let remove = gtk::Button::builder()
-            .icon_name("list-remove-symbolic")
-            .tooltip_text("Remove Author")
-            .valign(gtk::Align::Center)
-            .css_classes(["flat"])
-            .build();
-        name.add_suffix(&remove);
-
-        let customised = Rc::new(Cell::new(
-            author.sort_name != text::author_sort_name(&author.name),
-        ));
-        let deriving = Rc::new(Cell::new(false));
-        name.connect_changed(glib::clone!(
-            #[weak]
-            sort_name,
-            #[strong]
-            customised,
-            #[strong]
-            deriving,
-            move |name| {
-                if !customised.get() {
-                    deriving.set(true);
-                    sort_name.set_text(&text::author_sort_name(&name.text()));
-                    deriving.set(false);
-                }
-            }
-        ));
-        sort_name.connect_changed(move |_| {
-            if !deriving.get() {
-                customised.set(true);
-            }
-        });
-        remove.connect_clicked(glib::clone!(
+        let rows = AuthorRows::new(author);
+        let name = rows.name.clone();
+        rows.remove.connect_clicked(glib::clone!(
             #[weak(rename_to = dialog)]
             self,
             #[weak]
@@ -221,12 +247,9 @@ impl MetadataDialog {
         ));
 
         let imp = self.imp();
-        imp.authors_list.append(&name);
-        imp.authors_list.append(&sort_name);
-        imp.authors.borrow_mut().push(AuthorRows {
-            name: name.clone(),
-            sort_name,
-        });
+        imp.authors_list.append(&rows.name);
+        imp.authors_list.append(&rows.sort_name);
+        imp.authors.borrow_mut().push(rows);
         name
     }
 
@@ -315,12 +338,7 @@ impl MetadataDialog {
             .authors
             .borrow()
             .iter()
-            .filter_map(|rows| {
-                let name = text(&rows.name)?;
-                let sort_name =
-                    text(&rows.sort_name).unwrap_or_else(|| text::author_sort_name(&name));
-                Some(Author { name, sort_name })
-            })
+            .filter_map(AuthorRows::author)
             .collect();
         Metadata {
             title: imp.title_row.text().trim().to_owned(),

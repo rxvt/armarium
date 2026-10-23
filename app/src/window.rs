@@ -14,13 +14,14 @@ use adw::subclass::prelude::*;
 use armarium_core::Library;
 use armarium_core::device::{Device, SendOutcome, SendReport, Stage};
 use armarium_core::import::{ImportReport, Outcome};
-use armarium_core::model::{Book, BookId, Format, FormatKind, Metadata, SortKey};
+use armarium_core::model::{Book, BookId, Format, FormatKind, Metadata, MetadataEdit, SortKey};
 use gtk::{gdk, gio, glib};
 
 use crate::book_details::BookDetails;
 use crate::book_list;
 use crate::book_object::BookObject;
 use crate::book_tile::BookTile;
+use crate::bulk_metadata_dialog::BulkMetadataDialog;
 use crate::device_watch::{Connected, DeviceWatch};
 use crate::metadata_dialog::MetadataDialog;
 use crate::profile;
@@ -312,14 +313,10 @@ impl Window {
         let has_books = imp.store.borrow().as_ref().is_some_and(|s| s.n_items() > 0);
         imp.split_view
             .set_show_sidebar(has_books && !imp.details_hidden.get());
-        for action in [
-            "win.open-format",
-            "win.show-in-files",
-            "win.edit",
-            "win.delete-format",
-        ] {
+        for action in ["win.open-format", "win.show-in-files", "win.delete-format"] {
             self.action_set_enabled(action, single.is_some());
         }
+        self.action_set_enabled("win.edit", count > 0);
         self.action_set_enabled("win.delete", count > 0);
         let connected = imp.device.borrow().is_some();
         imp.details.set_can_send(connected && count > 0);
@@ -991,6 +988,13 @@ impl Window {
             book.append(Some("Edit Metadata…"), Some("win.edit"));
             book.append(Some("Show in Files"), Some("win.show-in-files"));
             menu.append_section(None, &book);
+        } else if books.len() > 1 {
+            let edit = gio::Menu::new();
+            edit.append(
+                Some(&format!("Edit Metadata of {} Books…", books.len())),
+                Some("win.edit"),
+            );
+            menu.append_section(None, &edit);
         }
         if self.imp().device.borrow().is_some() {
             let send = gio::Menu::new();
@@ -1113,10 +1117,17 @@ impl Window {
         self.open_library(path.to_owned());
     }
 
+    /// Edits the selected Book's Metadata, or several Books' at once.
     fn edit_selected(&self) {
-        let Some(obj) = self.selected_book() else {
-            return;
-        };
+        let objs = self.selected_books();
+        match objs.as_slice() {
+            [] => {}
+            [obj] => self.edit_book(obj),
+            _ => self.edit_books(&objs),
+        }
+    }
+
+    fn edit_book(&self, obj: &BookObject) {
         let book = obj.book();
         let cover = self.with_library(|lib| lib.cover_path(&book)).flatten();
         let thumbnails = self.imp().thumbnails.borrow().clone().unwrap();
@@ -1129,6 +1140,32 @@ impl Window {
             move |metadata, cover| win.save_metadata(id, metadata, cover)
         ));
         MetadataDialog::new(&book, cover, &thumbnails, on_save).present(Some(self));
+    }
+
+    fn edit_books(&self, objs: &[BookObject]) {
+        let books: Vec<Book> = objs.iter().map(|obj| obj.book().clone()).collect();
+        let ids: Vec<BookId> = books.iter().map(|book| book.id).collect();
+        let on_save = Box::new(glib::clone!(
+            #[weak(rename_to = win)]
+            self,
+            #[upgrade_or_else]
+            || Ok(()),
+            move |edit| win.save_metadata_edit(&ids, &edit)
+        ));
+        BulkMetadataDialog::new(&books, on_save).present(Some(self));
+    }
+
+    /// Makes `edit` to each Book, then reloads. A failure stops the rest and
+    /// says how many Books were updated before it.
+    fn save_metadata_edit(&self, ids: &[BookId], edit: &MetadataEdit) -> Result<(), String> {
+        let result = self.with_library_mut(|lib| lib.edit_metadata(ids, edit));
+        self.reload();
+        match result {
+            Some(Err((updated, e))) => {
+                Err(format!("Updated {updated} of {} Books: {e}", ids.len()))
+            }
+            _ => Ok(()),
+        }
     }
 
     /// Saves edited Metadata and, if given, a new Cover, then reloads.

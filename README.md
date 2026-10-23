@@ -9,7 +9,7 @@ Armarium collects your EPUBs and PDFs into one managed folder, keeps their metad
 - **Import** files or whole folders. Files are copied, never moved. Duplicates are skipped, and a PDF and EPUB of the same book are merged into one Book.
 - **Browse** as a resizable cover grid or a list, sorted by title, author, series, format or date added.
 - **Search** as you type, ignoring case and accents ("bronte" finds "Brontë").
-- **Edit** metadata (title, authors, series, publisher, ISBN and more) and replace covers.
+- **Edit** metadata (title, authors, series, publisher, ISBN and more) and replace covers. Select several books to change their authors, series, publisher or language at once.
 - **Open** books in your default reader, or show them in your file manager.
 - **Delete** to the Trash.
 - **Send to a Kindle** over USB. EPUBs are converted to AZW3 with their current metadata and cover, and PDFs are copied as they are. Books on the Kindle get a tick, and re-sending a Book keeps its reading position and highlights.

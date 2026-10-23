@@ -5,7 +5,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::library::Library;
-use crate::model::{Author, Book, BookId, CoverSource, FormatId, Metadata};
+use crate::model::{Author, Book, BookId, CoverSource, FormatId, Metadata, MetadataEdit};
 use crate::{Error, Result, cover, naming};
 
 impl Library {
@@ -90,6 +90,28 @@ impl Library {
         self.existing_book(id)
     }
 
+    /// Makes `edit` to each Book's Metadata in turn, renaming as
+    /// [`update_metadata`](Library::update_metadata) does. Stops at the first
+    /// failure, returning how many Books were updated before it; those stay
+    /// updated.
+    pub fn edit_metadata(
+        &mut self,
+        ids: &[BookId],
+        edit: &MetadataEdit,
+    ) -> std::result::Result<(), (usize, Error)> {
+        for (updated, &id) in ids.iter().enumerate() {
+            let result = self.existing_book(id).and_then(|book| {
+                let mut metadata = book.metadata;
+                edit.apply(&mut metadata);
+                self.update_metadata(id, metadata)
+            });
+            if let Err(e) = result {
+                return Err((updated, e));
+            }
+        }
+        Ok(())
+    }
+
     /// Replaces a Book's Cover with the image at `image`. The new Cover is
     /// never overridden by a later Import.
     pub fn set_cover(&mut self, id: BookId, image: &Path) -> Result<()> {
@@ -157,7 +179,7 @@ fn remove_if_empty(dir: Option<&Path>) {
 mod tests {
     use super::*;
     use crate::fixtures::{EpubFixture, PdfFixture, TempDir};
-    use crate::model::FormatKind;
+    use crate::model::{FieldEdit, FormatKind};
     use std::path::PathBuf;
     use std::sync::{Arc, Mutex};
 
@@ -281,6 +303,76 @@ mod tests {
         metadata.authors = vec![Author::new(" ")];
         let updated = s.library.update_metadata(book.id, metadata).unwrap();
         assert_eq!(updated.metadata.authors, vec![Author::new("Unknown")]);
+    }
+
+    /// Imports a second Book, "Emma" by Jane Austen, as an EPUB.
+    fn add_emma(s: &mut Setup) -> Book {
+        let epub = s.dir.path().join("emma.epub");
+        fs::write(
+            &epub,
+            EpubFixture::new()
+                .metadata("<dc:title>Emma</dc:title><dc:creator>Jane Austen</dc:creator>")
+                .build(),
+        )
+        .unwrap();
+        s.library.import(&[epub], |_| {}).unwrap();
+        let emma = s.library.books().unwrap().remove(0);
+        assert_eq!(emma.metadata.title, "Emma");
+        emma
+    }
+
+    #[test]
+    fn editing_several_books_changes_only_the_edited_fields() {
+        let (mut s, dune) = setup();
+        let emma = add_emma(&mut s);
+        let mut metadata = dune.metadata.clone();
+        metadata.series_index = Some(1.0);
+        metadata.isbn = Some("9780441013593".into());
+        s.library.update_metadata(dune.id, metadata).unwrap();
+
+        let edit = MetadataEdit {
+            authors: Some(vec![Author {
+                name: "Anon".into(),
+                sort_name: "Anonymous".into(),
+            }]),
+            series: FieldEdit::Set("Classics".into()),
+            ..Default::default()
+        };
+        s.library.edit_metadata(&[dune.id, emma.id], &edit).unwrap();
+
+        let dune = s.library.book(dune.id).unwrap().unwrap();
+        let emma = s.library.book(emma.id).unwrap().unwrap();
+        for (book, title) in [(&dune, "Dune"), (&emma, "Emma")] {
+            assert_eq!(book.metadata.title, title);
+            assert_eq!(book.metadata.authors[0].sort_name, "Anonymous");
+            assert_eq!(book.metadata.series.as_deref(), Some("Classics"));
+            assert_eq!(book.path, format!("Anon/{title} ({})", book.id.0));
+            assert!(s.library.book_dir(book).exists());
+        }
+        assert_eq!(dune.metadata.series_index, Some(1.0));
+        assert_eq!(dune.metadata.isbn.as_deref(), Some("9780441013593"));
+        assert_eq!(emma.metadata.series_index, None);
+    }
+
+    #[test]
+    fn editing_several_books_stops_at_the_first_failure() {
+        let (mut s, dune) = setup();
+        let emma = add_emma(&mut s);
+        let edit = MetadataEdit {
+            publisher: FieldEdit::Set("Penguin".into()),
+            ..Default::default()
+        };
+        let Err((updated, e)) = s
+            .library
+            .edit_metadata(&[dune.id, BookId(999), emma.id], &edit)
+        else {
+            panic!("an unknown Book should fail");
+        };
+        assert_eq!(updated, 1);
+        assert!(matches!(e, Error::Invalid(_)));
+        let publisher = |id| s.library.book(id).unwrap().unwrap().metadata.publisher;
+        assert_eq!(publisher(dune.id).as_deref(), Some("Penguin"));
+        assert_eq!(publisher(emma.id), None);
     }
 
     #[test]

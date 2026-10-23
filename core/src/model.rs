@@ -88,6 +88,58 @@ impl Metadata {
     }
 }
 
+/// What a [`MetadataEdit`] does to one optional field of each Book.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub enum FieldEdit {
+    /// Leaves each Book's value as it is.
+    #[default]
+    Keep,
+    Set(String),
+    Clear,
+}
+
+impl FieldEdit {
+    fn apply(&self, field: &mut Option<String>) {
+        match self {
+            FieldEdit::Keep => {}
+            FieldEdit::Set(value) => *field = Some(value.clone()),
+            FieldEdit::Clear => *field = None,
+        }
+    }
+}
+
+/// The same change made to the Metadata of several Books at once. Only the
+/// fields it names are touched; everything else stays as each Book has it.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct MetadataEdit {
+    /// Replaces each Book's whole author list.
+    pub authors: Option<Vec<Author>>,
+    /// Setting the series keeps each Book's number in it; clearing the
+    /// series clears the number too.
+    pub series: FieldEdit,
+    pub publisher: FieldEdit,
+    pub language: FieldEdit,
+}
+
+impl MetadataEdit {
+    /// Whether the edit leaves every field alone.
+    pub fn is_empty(&self) -> bool {
+        *self == MetadataEdit::default()
+    }
+
+    pub fn apply(&self, metadata: &mut Metadata) {
+        if let Some(authors) = &self.authors {
+            metadata.authors = authors.clone();
+        }
+        self.series.apply(&mut metadata.series);
+        if self.series == FieldEdit::Clear {
+            metadata.series_index = None;
+        }
+        self.publisher.apply(&mut metadata.publisher);
+        self.language.apply(&mut metadata.language);
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Format {
     pub id: FormatId,
@@ -412,5 +464,76 @@ mod tests {
         };
         assert_eq!(a.match_key(), b.match_key());
         assert_ne!(a.match_key(), c.match_key());
+    }
+
+    fn dune() -> Metadata {
+        Metadata {
+            title: "Dune".into(),
+            authors: vec![Author::new("Frank Herbert")],
+            series: Some("Dune".into()),
+            series_index: Some(1.0),
+            publisher: Some("Chilton".into()),
+            language: Some("en".into()),
+            isbn: Some("9780441013593".into()),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn empty_metadata_edit_changes_nothing() {
+        let edit = MetadataEdit::default();
+        assert!(edit.is_empty());
+        let mut metadata = dune();
+        edit.apply(&mut metadata);
+        assert_eq!(metadata, dune());
+    }
+
+    #[test]
+    fn metadata_edit_sets_only_the_fields_it_names() {
+        let edit = MetadataEdit {
+            authors: Some(vec![
+                Author::new("Brian Herbert"),
+                Author::new("Kevin J. Anderson"),
+            ]),
+            publisher: FieldEdit::Set("Tor".into()),
+            ..Default::default()
+        };
+        assert!(!edit.is_empty());
+        let mut metadata = dune();
+        edit.apply(&mut metadata);
+        assert_eq!(
+            metadata,
+            Metadata {
+                authors: vec![
+                    Author::new("Brian Herbert"),
+                    Author::new("Kevin J. Anderson")
+                ],
+                publisher: Some("Tor".into()),
+                ..dune()
+            }
+        );
+    }
+
+    #[test]
+    fn setting_series_keeps_its_number_and_clearing_drops_it() {
+        let mut metadata = dune();
+        MetadataEdit {
+            series: FieldEdit::Set("Dune Chronicles".into()),
+            ..Default::default()
+        }
+        .apply(&mut metadata);
+        assert_eq!(metadata.series.as_deref(), Some("Dune Chronicles"));
+        assert_eq!(metadata.series_index, Some(1.0));
+
+        MetadataEdit {
+            series: FieldEdit::Clear,
+            language: FieldEdit::Clear,
+            ..Default::default()
+        }
+        .apply(&mut metadata);
+        assert_eq!(metadata.series, None);
+        assert_eq!(metadata.series_index, None);
+        assert_eq!(metadata.language, None);
+        assert_eq!(metadata.publisher.as_deref(), Some("Chilton"));
     }
 }

@@ -1,0 +1,94 @@
+using Gtk 4.0;
+using Adw 1;
+
+template $ArmariumBulkMetadataDialog: Adw.Dialog {
+  content-width: 520;
+  content-height: 600;
+
+  child: Adw.ToastOverlay toast_overlay {
+    child: Adw.ToolbarView {
+      [top]
+      Adw.HeaderBar {
+        show-start-title-buttons: false;
+        show-end-title-buttons: false;
+
+        [start]
+        Gtk.Button {
+          label: _("_Cancel");
+          use-underline: true;
+          clicked => $on_cancel() swapped;
+        }
+
+        [end]
+        Gtk.Button save_button {
+          label: _("_Save");
+          use-underline: true;
+          sensitive: false;
+
+          styles [
+            "suggested-action",
+          ]
+        }
+      }
+
+      content: Adw.PreferencesPage {
+        Adw.PreferencesGroup {
+          description: _("Only the fields you change are saved. Authors replace each book’s authors.");
+        }
+
+        Adw.PreferencesGroup {
+          title: _("Authors");
+
+          header-suffix: Gtk.Button {
+            icon-name: "list-add-symbolic";
+            tooltip-text: _("Add Author");
+            valign: center;
+            clicked => $on_add_author() swapped;
+
+            styles [
+              "flat",
+            ]
+          };
+
+          Gtk.ListBox authors_list {
+            selection-mode: none;
+
+            [placeholder]
+            Gtk.Label authors_placeholder {
+              margin-top: 12;
+              margin-bottom: 12;
+
+              styles [
+                "dimmed",
+              ]
+            }
+
+            styles [
+              "boxed-list",
+            ]
+          }
+        }
+
+        Adw.PreferencesGroup {
+          title: _("Series");
+
+          Adw.EntryRow series_row {
+            title: _("Series");
+          }
+        }
+
+        Adw.PreferencesGroup {
+          title: _("Publication");
+
+          Adw.EntryRow publisher_row {
+            title: _("Publisher");
+          }
+
+          Adw.EntryRow language_row {
+            title: _("Language");
+          }
+        }
+      };
+    };
+  };
+}
