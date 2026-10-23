@@ -41,8 +41,8 @@ fn tokenize(css: &str) -> Vec<Token<'_>> {
                 other_start = i;
             }
             b'u' | b'U'
-                if css[i..].len() >= 4
-                    && css[i..i + 4].eq_ignore_ascii_case("url(")
+                if bytes.len() - i >= 4
+                    && bytes[i..i + 4].eq_ignore_ascii_case(b"url(")
                     && (i == 0 || !is_name_byte(bytes[i - 1])) =>
             {
                 let mut j = i + 4;
@@ -329,5 +329,12 @@ mod tests {
             "body { margin: 0 } div, BODY {} p { height: 2em } @media x { body {} }"
         );
         assert_eq!(drop_height_decls("height: 1px; color: red"), " color: red");
+    }
+
+    #[test]
+    fn multibyte_after_u_is_not_a_url() {
+        for css in [".uA中 {}", "u😀"] {
+            assert_eq!(replace_urls(css, |u| Some(format!("<{u}>"))), css);
+        }
     }
 }
