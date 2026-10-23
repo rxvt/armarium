@@ -42,7 +42,7 @@ pub struct Resources {
 impl Resources {
     /// Every raster image and TrueType/OpenType font in the manifest. With
     /// `cover`, the Library's Cover replaces the EPUB's cover image (or is
-    /// added if there is none).
+    /// added if there is none, or it is not a raster image).
     pub fn new(oeb: &Oeb, cover: Option<&[u8]>) -> Resources {
         let mut res = Resources::default();
         let mut index = 1;
@@ -58,17 +58,17 @@ impl Resources {
             })
             .collect();
         // An href no item has, so the Library's Cover gets a record even
-        // when the EPUB has no cover image.
+        // when the EPUB has no raster cover image to replace.
         const ADDED_COVER: &str = "\0cover";
         let cover_href = match (cover, cover_href) {
-            (Some(c), Some(href)) => {
+            (Some(c), Some(href)) if images.iter().any(|(h, _)| *h == href) => {
                 images
                     .iter_mut()
                     .filter(|(h, _)| *h == href)
                     .for_each(|(_, b)| *b = c);
                 Some(href)
             }
-            (Some(c), None) => {
+            (Some(c), _) => {
                 images.push((ADDED_COVER, c));
                 Some(ADDED_COVER)
             }
@@ -244,6 +244,8 @@ fn thumbnail(cover: &[u8]) -> Option<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::azw3::dom;
+    use crate::azw3::oeb::{Item, TocNode};
 
     fn jpeg(w: u32, h: u32) -> Vec<u8> {
         let img = DynamicImage::ImageRgb8(RgbImage::from_fn(w, h, |x, y| {
@@ -270,6 +272,72 @@ mod tests {
         assert_eq!(jpeg_markers(&exif), (false, true));
         let fixed = process_jpeg_for_amazon(&exif).unwrap();
         assert_eq!(jpeg_markers(&fixed), (true, false));
+    }
+
+    /// A book whose only item is its cover image.
+    fn oeb_with_cover(media_type: &str, data: Data) -> Oeb {
+        Oeb {
+            items: vec![Item {
+                id: "cover".into(),
+                href: "cover".into(),
+                media_type: media_type.into(),
+                data,
+            }],
+            spine: Vec::new(),
+            toc: TocNode {
+                title: String::new(),
+                href: None,
+                children: Vec::new(),
+            },
+            guide: Vec::new(),
+            cover_image: Some(0),
+            page_progression_direction: None,
+            primary_writing_mode: None,
+            uuid: None,
+            obfuscated: HashSet::new(),
+        }
+    }
+
+    #[test]
+    fn library_cover_replaces_a_raster_cover() {
+        let oeb = oeb_with_cover("image/jpeg", Data::Raw(jpeg(8, 8)));
+        let library = jpeg(16, 16);
+        let res = Resources::new(&oeb, Some(&library));
+        assert_eq!(res.cover_offset, Some(0));
+        assert_eq!(res.item_map["cover"], 1);
+        assert_eq!(res.records[0], library);
+        assert!(res.thumbnail_offset.is_some());
+    }
+
+    /// The Library Cover gets its own record when the EPUB's cover is not
+    /// one of the raster images.
+    fn assert_library_cover_added(oeb: &Oeb) {
+        let library = jpeg(16, 16);
+        let res = Resources::new(oeb, Some(&library));
+        assert_eq!(res.cover_offset, Some(0));
+        assert_eq!(res.records[0], library);
+        assert!(res.thumbnail_offset.is_some());
+        assert!(!res.item_map.contains_key("cover"));
+    }
+
+    #[test]
+    fn library_cover_is_added_for_an_svg_cover() {
+        let svg = dom::parse(br#"<svg xmlns="http://www.w3.org/2000/svg"/>"#).unwrap();
+        assert_library_cover_added(&oeb_with_cover("image/svg+xml", Data::Svg(svg)));
+    }
+
+    #[test]
+    fn library_cover_is_added_for_an_image_jpg_cover() {
+        assert_library_cover_added(&oeb_with_cover("image/jpg", Data::Raw(jpeg(8, 8))));
+    }
+
+    #[test]
+    fn without_a_library_cover_only_raster_covers_count() {
+        let res = Resources::new(&oeb_with_cover("image/jpeg", Data::Raw(jpeg(8, 8))), None);
+        assert_eq!(res.cover_offset, Some(0));
+        let res = Resources::new(&oeb_with_cover("image/jpg", Data::Raw(jpeg(8, 8))), None);
+        assert_eq!(res.cover_offset, None);
+        assert!(res.records.is_empty());
     }
 
     #[test]
