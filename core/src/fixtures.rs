@@ -113,6 +113,7 @@ pub struct EpubFixture {
     metadata: String,
     manifest: String,
     spine: String,
+    guide: String,
     files: Vec<(String, Vec<u8>)>,
     container: bool,
 }
@@ -124,6 +125,7 @@ impl EpubFixture {
             metadata: "<dc:title>Untitled</dc:title>".into(),
             manifest: String::new(),
             spine: String::new(),
+            guide: String::new(),
             files: Vec::new(),
             container: true,
         }
@@ -149,6 +151,12 @@ impl EpubFixture {
     /// Children of `<spine>`.
     pub fn spine(mut self, xml: &str) -> Self {
         self.spine = xml.into();
+        self
+    }
+
+    /// Children of `<guide>`, which is left out if empty.
+    pub fn guide(mut self, xml: &str) -> Self {
+        self.guide = xml.into();
         self
     }
 
@@ -199,9 +207,16 @@ impl EpubFixture {
   </manifest>
   <spine>
     {}
-  </spine>
+  </spine>{}
 </package>"#,
-                self.metadata, self.manifest, self.spine
+                self.metadata,
+                self.manifest,
+                self.spine,
+                if self.guide.is_empty() {
+                    String::new()
+                } else {
+                    format!("\n  <guide>\n    {}\n  </guide>", self.guide)
+                }
             )
             .as_bytes(),
         );

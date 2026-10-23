@@ -6,8 +6,8 @@
 //! An HTML Table of Contents at the end of the book, which the Kindle's
 //! "Table of Contents" menu item opens, unless the book has its own.
 
-use super::dom::{self, Element, Node};
-use super::oeb::{Data, GuideRef, Item, Oeb, XHTML_NS, strip_fragment};
+use super::dom::{Element, Node};
+use super::oeb::{Data, GuideRef, Item, Oeb, XHTML_NS, parse_html, strip_fragment};
 
 const TITLE: &str = "Table of Contents";
 const STYLE: &str =
@@ -23,12 +23,13 @@ pub fn add_inline_toc(oeb: &mut Oeb) {
         .position(|g| g.kind.eq_ignore_ascii_case("toc"))
     {
         // Keep the book's own ToC if it has links, making sure it is in the
-        // spine; otherwise drop the guide entry.
+        // spine; otherwise drop the guide entry. It must be a document with a
+        // body, as spine documents are, or the writer could not chunk it.
         let href = strip_fragment(&oeb.guide[pos].href).to_owned();
         if let Some(i) = oeb.item(&href) {
             if let Data::Raw(bytes) = &oeb.items[i].data
                 && oeb.items[i].media_type.contains("html")
-                && let Ok(root) = dom::parse(bytes)
+                && let Ok(root) = parse_html(bytes)
             {
                 oeb.items[i].data = Data::Html(root);
             }
@@ -158,4 +159,90 @@ fn process_node(node: &super::oeb::TocNode, parent: &mut Element, level: usize) 
     parent
         .children
         .push(Node::Text(format!("\n{}", "\t".repeat(level))));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::fixtures::{EpubFixture, TempDir};
+    use crate::model::Metadata;
+
+    /// A book with one chapter, two NCX entries and `toc_page` as the
+    /// guide's ToC, outside the spine.
+    fn epub(toc_page: &str) -> Vec<u8> {
+        EpubFixture::new()
+            .manifest(
+                r#"<item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
+                <item id="c1" href="one.xhtml" media-type="application/xhtml+xml"/>
+                <item id="toc" href="toc.xhtml" media-type="application/xhtml+xml"/>"#,
+            )
+            .spine(r#"<itemref idref="c1"/>"#)
+            .guide(r#"<reference type="toc" title="Contents" href="toc.xhtml"/>"#)
+            .file(
+                "toc.ncx",
+                br##"<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/"><navMap>
+                <navPoint><navLabel><text>One</text></navLabel><content src="one.xhtml"/></navPoint>
+                <navPoint><navLabel><text>Two</text></navLabel><content src="one.xhtml#two"/></navPoint>
+                </navMap></ncx>"##,
+            )
+            .file(
+                "one.xhtml",
+                br#"<html xmlns="http://www.w3.org/1999/xhtml"><head><title>1</title></head>
+<body><h1>One</h1><h2 id="two">Two</h2></body></html>"#,
+            )
+            .file("toc.xhtml", toc_page.as_bytes())
+            .build()
+    }
+
+    fn read(toc_page: &str) -> (TempDir, Oeb) {
+        let dir = TempDir::new();
+        let path = dir.path().join("book.epub");
+        std::fs::write(&path, epub(toc_page)).unwrap();
+        let oeb = Oeb::read(&path).unwrap();
+        (dir, oeb)
+    }
+
+    fn spine_hrefs(oeb: &Oeb) -> Vec<&str> {
+        oeb.spine
+            .iter()
+            .map(|&i| oeb.items[i].href.as_str())
+            .collect()
+    }
+
+    const NO_BODY: &str = r#"<html xmlns="http://www.w3.org/1999/xhtml"><head><title>Contents</title></head>
+<div><a href="one.xhtml">One</a></div></html>"#;
+    const NOT_HTML: &str = r#"<div><a href="one.xhtml">One</a></div>"#;
+
+    #[test]
+    fn keeps_a_books_own_toc_page() {
+        let (_dir, mut oeb) = read(
+            r#"<html xmlns="http://www.w3.org/1999/xhtml"><head><title>Contents</title></head>
+<body><a href="one.xhtml">One</a></body></html>"#,
+        );
+        add_inline_toc(&mut oeb);
+        assert_eq!(spine_hrefs(&oeb), ["one.xhtml", "toc.xhtml"]);
+        assert_eq!(oeb.guide.len(), 1);
+        assert_eq!(oeb.guide[0].href, "toc.xhtml");
+    }
+
+    #[test]
+    fn replaces_a_malformed_toc_page() {
+        for page in [NO_BODY, NOT_HTML] {
+            let (_dir, mut oeb) = read(page);
+            add_inline_toc(&mut oeb);
+            assert_eq!(spine_hrefs(&oeb), ["one.xhtml", "contents.xhtml"]);
+            assert_eq!(oeb.guide.len(), 1);
+            assert_eq!(oeb.guide[0].href, "contents.xhtml");
+        }
+    }
+
+    #[test]
+    fn converts_a_book_with_a_malformed_toc_page() {
+        for page in [NO_BODY, NOT_HTML] {
+            let dir = TempDir::new();
+            let path = dir.path().join("book.epub");
+            std::fs::write(&path, epub(page)).unwrap();
+            crate::azw3::convert(&path, &Metadata::default(), None, None).unwrap();
+        }
+    }
 }
