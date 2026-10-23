@@ -191,6 +191,37 @@ pub enum SortKey {
     DateAdded,
 }
 
+impl SortKey {
+    pub const ALL: [SortKey; 5] = [
+        SortKey::Title,
+        SortKey::Authors,
+        SortKey::Series,
+        SortKey::Formats,
+        SortKey::DateAdded,
+    ];
+
+    /// Stable name, used in settings and action states.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SortKey::Title => "title",
+            SortKey::Authors => "authors",
+            SortKey::Series => "series",
+            SortKey::Formats => "formats",
+            SortKey::DateAdded => "date-added",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<SortKey> {
+        SortKey::ALL.into_iter().find(|k| k.as_str() == s)
+    }
+
+    /// Whether choosing this key should start descending: newest first for
+    /// Date added, A to Z for the rest.
+    pub fn starts_descending(self) -> bool {
+        self == SortKey::DateAdded
+    }
+}
+
 /// A Book's sort keys, computed once so that sorting a large Library does
 /// not fold text on every comparison. From [`Book::sort_keys`].
 #[derive(Debug, Clone, Default)]
@@ -275,6 +306,14 @@ mod tests {
         assert!(search_matches(&text, "classics"));
         assert!(!search_matches(&text, "smith"), "publisher is not searched");
         assert!(!search_matches(&text, "eyre emily"));
+    }
+
+    #[test]
+    fn sort_key_round_trips_name() {
+        for key in SortKey::ALL {
+            assert_eq!(SortKey::parse(key.as_str()), Some(key));
+        }
+        assert_eq!(SortKey::parse("size"), None);
     }
 
     fn book(id: i64, title: &str, author: &str) -> Book {

@@ -63,6 +63,21 @@ impl Settings {
         self.save();
     }
 
+    /// The sort key's name ([`SortKey::as_str`]) and whether it is descending.
+    ///
+    /// [`SortKey::as_str`]: armarium_core::model::SortKey::as_str
+    pub fn sort(&self) -> Option<(String, bool)> {
+        let key = self.file.string(GROUP, "sort").ok()?;
+        let descending = self.file.boolean(GROUP, "sort-descending").ok()?;
+        Some((key.into(), descending))
+    }
+
+    pub fn set_sort(&self, key: &str, descending: bool) {
+        self.file.set_string(GROUP, "sort", key);
+        self.file.set_boolean(GROUP, "sort-descending", descending);
+        self.save();
+    }
+
     fn save(&self) {
         let result = self
             .path
