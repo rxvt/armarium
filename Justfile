@@ -114,3 +114,19 @@ screenshot out=(scratch / "screenshot.png"):
 reset-scratch:
     rm -rf {{ quote(scratch) }}
     mkdir -p {{ quote(scratch / "library") }}
+
+# Pick a git worktree and run a recipe there (default: open its scratch Library)
+[positional-arguments]
+wt recipe="scratch" *args:
+    #!/usr/bin/env sh
+    set -eu
+    status=0
+    dir=$(git worktree list --porcelain | sed -n 's/^worktree //p' | fzf --prompt="worktree> ") || status=$?
+    # fzf exits 1 for no match and 130 when cancelled; anything else is a real failure.
+    case $status in
+        0) ;;
+        1 | 130) exit 0 ;;
+        *) exit "$status" ;;
+    esac
+    shift
+    just -f "$dir/Justfile" {{ quote(recipe) }} "$@"
