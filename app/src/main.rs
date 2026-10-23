@@ -7,6 +7,7 @@ mod metadata_dialog;
 mod profile;
 mod settings;
 mod steady_content;
+mod suggestion_popover;
 mod thumbnails;
 mod window;
 

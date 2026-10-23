@@ -13,6 +13,7 @@ pub mod import;
 pub mod library;
 pub mod model;
 mod naming;
+pub mod suggest;
 pub mod text;
 mod xml;
 

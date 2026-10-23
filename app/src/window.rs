@@ -15,6 +15,7 @@ use armarium_core::Library;
 use armarium_core::device::{Device, SendOutcome, SendReport, Stage};
 use armarium_core::import::{ImportReport, Outcome};
 use armarium_core::model::{Book, BookId, Format, FormatKind, Metadata, SortKey};
+use armarium_core::suggest::Suggestions;
 use gtk::{gdk, gio, glib};
 
 use crate::book_details::BookDetails;
@@ -1121,6 +1122,13 @@ impl Window {
         let cover = self.with_library(|lib| lib.cover_path(&book)).flatten();
         let thumbnails = self.imp().thumbnails.borrow().clone().unwrap();
         let id = book.id;
+        let names: Vec<String> = self
+            .store()
+            .iter::<BookObject>()
+            .flatten()
+            .filter_map(|obj| obj.book().metadata.series.clone())
+            .collect();
+        let series = Suggestions::new(names.iter().map(String::as_str));
         let on_save = Box::new(glib::clone!(
             #[weak(rename_to = win)]
             self,
@@ -1128,7 +1136,7 @@ impl Window {
             || Ok(()),
             move |metadata, cover| win.save_metadata(id, metadata, cover)
         ));
-        MetadataDialog::new(&book, cover, &thumbnails, on_save).present(Some(self));
+        MetadataDialog::new(&book, series, cover, &thumbnails, on_save).present(Some(self));
     }
 
     /// Saves edited Metadata and, if given, a new Cover, then reloads.
