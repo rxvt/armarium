@@ -9,16 +9,30 @@ template $ArmariumBookDetails: Adw.Bin {
       child: Adw.StatusPage none_page {
         icon-name: "accessories-dictionary-symbolic";
 
-        child: Gtk.Button send_many_button {
-          label: _("_Send to Kindle");
-          use-underline: true;
+        child: Gtk.Box {
           halign: center;
-          action-name: "win.send-to-device";
-          visible: false;
+          spacing: 12;
 
-          styles [
-            "pill",
-          ]
+          Gtk.Button edit_many_button {
+            use-underline: true;
+            action-name: "win.edit";
+            visible: false;
+
+            styles [
+              "pill",
+            ]
+          }
+
+          Gtk.Button send_many_button {
+            label: _("_Send to Kindle");
+            use-underline: true;
+            action-name: "win.send-to-device";
+            visible: false;
+
+            styles [
+              "pill",
+            ]
+          }
         };
 
         styles [
