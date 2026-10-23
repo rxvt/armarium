@@ -1,6 +1,8 @@
 //! Suggestions for a free-text Metadata field from the values the Library
 //! already uses, so new entries stay consistent with existing ones.
 
+use std::collections::HashMap;
+
 use crate::text;
 
 /// The distinct values one field holds across the Library.
@@ -23,21 +25,20 @@ impl Suggestions {
     /// accents or surrounding whitespace count as one, shown in the spelling
     /// most of them use; empty values are skipped.
     pub fn new<'a>(values: impl IntoIterator<Item = &'a str>) -> Suggestions {
-        // Per folded value, its spellings in first-seen order with counts.
-        let mut groups: Vec<(String, Vec<(&str, usize)>)> = Vec::new();
+        // Per folded value, in first-seen order, its spellings in first-seen
+        // order with counts; `group_of` finds a folded value's group.
+        let mut groups: Vec<Vec<(&str, usize)>> = Vec::new();
+        let mut group_of: HashMap<String, usize> = HashMap::new();
         for value in values {
             let value = value.trim();
             if value.is_empty() {
                 continue;
             }
-            let folded = text::fold(value);
-            let spellings = match groups.iter_mut().find(|(f, _)| *f == folded) {
-                Some((_, spellings)) => spellings,
-                None => {
-                    groups.push((folded, Vec::new()));
-                    &mut groups.last_mut().unwrap().1
-                }
-            };
+            let index = *group_of.entry(text::fold(value)).or_insert_with(|| {
+                groups.push(Vec::new());
+                groups.len() - 1
+            });
+            let spellings = &mut groups[index];
             match spellings.iter_mut().find(|(s, _)| *s == value) {
                 Some((_, count)) => *count += 1,
                 None => spellings.push((value, 1)),
@@ -45,7 +46,7 @@ impl Suggestions {
         }
         let mut entries: Vec<Entry> = groups
             .into_iter()
-            .map(|(folded, spellings)| {
+            .map(|spellings| {
                 // max_by_key keeps the last of equals, so walk backwards to
                 // let the first-seen spelling win a tie.
                 let (value, _) = spellings
@@ -53,10 +54,12 @@ impl Suggestions {
                     .rev()
                     .max_by_key(|&(_, count)| count)
                     .unwrap();
+                // Every spelling in a group folds the same, so refold the
+                // winner rather than keep each folded value twice.
                 Entry {
                     value: value.to_owned(),
+                    folded: text::fold(value),
                     sort_key: text::title_sort_key(value),
-                    folded,
                 }
             })
             .collect();
