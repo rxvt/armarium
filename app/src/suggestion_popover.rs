@@ -11,7 +11,8 @@ use gtk::{gdk, glib};
 const MAX_HEIGHT: i32 = 240;
 
 /// Offers `suggestions` under `row`. Down and Up move through them, Enter or
-/// a click fills the row, and Escape closes only the list.
+/// a click fills the row, with Enter taking the first when none is selected,
+/// and Escape closes only the list.
 pub fn attach(row: &adw::EntryRow, suggestions: Suggestions) {
     let list = gtk::ListBox::builder()
         .selection_mode(gtk::SelectionMode::Single)
@@ -103,7 +104,7 @@ pub fn attach(row: &adw::EntryRow, suggestions: Suggestions) {
                 gdk::Key::Down => Some(selected.map_or(0, |i| i + 1)),
                 gdk::Key::Up => Some(selected.map_or(0, |i| i - 1).max(0)),
                 gdk::Key::Return | gdk::Key::KP_Enter => {
-                    let Some(item) = list.selected_row() else {
+                    let Some(item) = list.selected_row().or_else(|| list.row_at_index(0)) else {
                         return glib::Propagation::Proceed;
                     };
                     fill(&row, &item);
