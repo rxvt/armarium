@@ -52,7 +52,9 @@ Vocabulary is defined in [GLOSSARY.md](GLOSSARY.md), the v1 scope in [docs/v1-pl
 
 ## Credits
 
-EPUB to AZW3 conversion (`core/src/azw3/`) is a Rust port of part of [calibre](https://calibre-ebook.com) by Kovid Goyal. See [NOTICE](NOTICE) for the files involved.
+Sending to a Kindle would not exist without [calibre](https://calibre-ebook.com) and its author, Kovid Goyal. Calibre has been the go-to ebook manager for nearly two decades, and its AZW3 writer is the product of years of careful reverse engineering of Amazon's formats. Armarium's EPUB to AZW3 conversion (`core/src/azw3/`) is a Rust port of that writer, so the credit for how it works belongs to Kovid and calibre's contributors; any bugs in the port are ours. If you find Armarium useful, please consider [supporting calibre](https://calibre-ebook.com/donate). See [NOTICE](NOTICE) for the files involved.
+
+Armarium is also built on the work of the [GTK](https://gtk.org), [libadwaita](https://gitlab.gnome.org/GNOME/libadwaita), [gtk-rs](https://gtk-rs.org), [Poppler](https://poppler.freedesktop.org) and [SQLite](https://sqlite.org) projects.
 
 ## License
 
