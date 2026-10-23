@@ -120,6 +120,6 @@ reset-scratch:
 wt recipe="scratch" *args:
     #!/usr/bin/env sh
     set -eu
-    dir=$(git worktree list | fzf --prompt="worktree> " | awk '{print $1}')
+    dir=$(git worktree list --porcelain | sed -n 's/^worktree //p' | fzf --prompt="worktree> ") || exit 0
     shift
     just -f "$dir/Justfile" {{ quote(recipe) }} "$@"

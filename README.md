@@ -63,7 +63,7 @@ Only one development build can be open at a time for now ([#16](https://github.c
 To `cd` into a worktree instead, add this to your shell config:
 
 ```bash
-wt() { local d; d=$(git worktree list | fzf | awk '{print $1}') && cd "$d"; }
+wt() { local d; d=$(git worktree list --porcelain | sed -n 's/^worktree //p' | fzf) && cd "$d"; }
 ```
 
 Vocabulary is defined in [GLOSSARY.md](GLOSSARY.md), the v1 scope in [docs/v1-plan.md](docs/v1-plan.md), and lasting decisions in [docs/adr/](docs/adr/).
