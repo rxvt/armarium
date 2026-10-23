@@ -342,7 +342,7 @@ pub fn resolve_with_fragment(base: &str, href: &str) -> String {
     }
 }
 
-fn parse_html(bytes: &[u8]) -> std::result::Result<Element, String> {
+pub(super) fn parse_html(bytes: &[u8]) -> std::result::Result<Element, String> {
     let root = dom::parse(bytes)?;
     if !root.is("html") {
         return Err(format!("root element is <{}>, not <html>", root.name));
