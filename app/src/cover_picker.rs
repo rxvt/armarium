@@ -157,6 +157,8 @@ impl Picker {
     fn search(self: &Rc<Self>, term: &str) {
         let id = self.search_id.get().wrapping_add(1);
         self.search_id.set(id);
+        // Any download in progress belongs to a tile about to go.
+        self.downloading.set(false);
         for _ in self.tiles.take() {
             if let Some(child) = self.grid.child_at_index(1) {
                 self.grid.remove(&child);
@@ -248,10 +250,10 @@ impl Picker {
             let Some(picker) = weak.upgrade() else {
                 return;
             };
-            picker.downloading.set(false);
             if picker.search_id.get() != search_id {
                 return;
             }
+            picker.downloading.set(false);
             match result {
                 Ok(bytes) => picker.choose(bytes.to_vec()),
                 Err(e) => picker.toast(&e),
