@@ -113,7 +113,46 @@ fn fills_2_3(width: i32, height: i32) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::fills_2_3;
+    use super::*;
+
+    fn texture(width: i32, height: i32) -> gdk::Texture {
+        let bytes = gtk::glib::Bytes::from_owned(vec![0u8; (width * height * 4) as usize]);
+        gdk::MemoryTexture::new(
+            width,
+            height,
+            gdk::MemoryFormat::R8g8b8a8,
+            &bytes,
+            width as usize * 4,
+        )
+        .upcast()
+    }
+
+    /// One test, since GTK widgets belong to the thread that initialised
+    /// GTK. Skipped without a display.
+    #[test]
+    fn show_cover_letterboxes_only_other_shapes() {
+        if gtk::init().is_err() {
+            return;
+        }
+        let picture = gtk::Picture::new();
+        let shown = |picture: &gtk::Picture| {
+            (
+                picture.content_fit(),
+                picture.has_css_class("cover-backdrop"),
+                picture.paintable().is_some(),
+            )
+        };
+
+        show_cover(&picture, Some(&texture(974, 1200)));
+        assert_eq!(shown(&picture), (gtk::ContentFit::Contain, true, true));
+
+        show_cover(&picture, Some(&texture(600, 900)));
+        assert_eq!(shown(&picture), (gtk::ContentFit::Cover, false, true));
+
+        show_cover(&picture, Some(&texture(900, 900)));
+        show_cover(&picture, None);
+        assert_eq!(shown(&picture), (gtk::ContentFit::Cover, false, false));
+    }
 
     #[test]
     fn covers_near_2_3_fill() {
