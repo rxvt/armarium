@@ -24,6 +24,7 @@ use crate::book_object::BookObject;
 use crate::book_tile::BookTile;
 use crate::bulk_metadata_dialog::BulkMetadataDialog;
 use crate::device_watch::{Connected, DeviceWatch};
+use crate::merge_dialog;
 use crate::metadata_dialog::MetadataDialog;
 use crate::profile;
 use crate::settings::Settings;
@@ -148,6 +149,7 @@ mod imp {
                 klass.add_binding_action(key, gdk::ModifierType::CONTROL_MASK, action);
             }
             klass.install_action("win.delete", None, |win, _, _| win.confirm_delete_books());
+            klass.install_action("win.merge", None, |win, _, _| win.merge_selected());
             klass.install_action("win.eject-device", None, |win, _, _| win.eject_device());
             klass.install_action("win.send-to-device", None, |win, _, _| win.send_selected());
             klass.install_action(
@@ -319,6 +321,11 @@ impl Window {
         }
         self.action_set_enabled("win.edit", count > 0);
         self.action_set_enabled("win.delete", count > 0);
+        // A Send or Import in progress reads the Books' files.
+        self.action_set_enabled(
+            "win.merge",
+            count > 1 && !imp.sending.get() && !imp.importing.get(),
+        );
         let connected = imp.device.borrow().is_some();
         imp.details.set_can_send(connected && count > 0);
         self.action_set_enabled(
@@ -995,6 +1002,10 @@ impl Window {
                 Some(&format!("Edit Metadata of {} Books…", books.len())),
                 Some("win.edit"),
             );
+            edit.append(
+                Some(&format!("Merge {} Books…", books.len())),
+                Some("win.merge"),
+            );
             menu.append_section(None, &edit);
         }
         if self.imp().device.borrow().is_some() {
@@ -1304,9 +1315,8 @@ impl Window {
         }
     }
 
-    /// Sends the selected Books to the Device on a worker thread with its
-    /// own database connection, showing progress, then shows a summary toast.
-    /// Eject waits until it finishes.
+    /// Sends the selected Books, first asking whether to send EPUB or PDF if
+    /// any of them has both. The choice is not remembered.
     fn send_selected(&self) {
         let imp = self.imp();
         if imp.sending.get() || imp.importing.get() {
@@ -1317,6 +1327,67 @@ impl Window {
             .iter()
             .map(|obj| obj.book().clone())
             .collect();
+        let both = books
+            .iter()
+            .filter(|b| b.format(FormatKind::Epub).is_some() && b.format(FormatKind::Pdf).is_some())
+            .count();
+        if both == 0 {
+            self.send_books(books, FormatKind::Epub);
+            return;
+        }
+        let (heading, body) = match books.as_slice() {
+            [book] => (
+                format!("Send “{}” as EPUB or PDF?", book.metadata.title),
+                "The EPUB is converted for the Kindle; the PDF is sent as it is. \
+                 A copy already on the Kindle is replaced."
+                    .to_owned(),
+            ),
+            _ => {
+                let n = books.len();
+                let body = match both {
+                    1 => format!("One of the {n} books has both."),
+                    _ if both == n => format!("All {n} books have both."),
+                    _ => format!("{both} of the {n} books have both."),
+                };
+                let others = if both < n {
+                    " The others are sent in the one format they have."
+                } else {
+                    ""
+                };
+                ("Send EPUB or PDF?".to_owned(), format!("{body}{others}"))
+            }
+        };
+        let dialog = adw::AlertDialog::new(Some(&heading), Some(&body));
+        dialog.add_responses(&[("cancel", "_Cancel"), ("pdf", "_PDF"), ("epub", "_EPUB")]);
+        dialog.set_response_appearance("epub", adw::ResponseAppearance::Suggested);
+        dialog.set_default_response(Some("epub"));
+        dialog.set_close_response("cancel");
+        dialog.connect_response(
+            None,
+            glib::clone!(
+                #[weak(rename_to = win)]
+                self,
+                move |_, response| {
+                    let prefer = match response {
+                        "epub" => FormatKind::Epub,
+                        "pdf" => FormatKind::Pdf,
+                        _ => return,
+                    };
+                    win.send_books(books.clone(), prefer);
+                }
+            ),
+        );
+        dialog.present(Some(self));
+    }
+
+    /// Sends `books` to the Device on a worker thread with its own database
+    /// connection, showing progress, then shows a summary toast. Eject waits
+    /// until it finishes.
+    fn send_books(&self, books: Vec<Book>, prefer: FormatKind) {
+        let imp = self.imp();
+        if imp.sending.get() || imp.importing.get() {
+            return;
+        }
         let Some(root) = self.with_library(|lib| lib.root().to_owned()) else {
             return;
         };
@@ -1367,7 +1438,7 @@ impl Window {
             async move {
                 let result = gio::spawn_blocking(move || {
                     let library = Library::open(root)?;
-                    device.send(&library, &books, |p| {
+                    device.send(&library, &books, prefer, |p| {
                         let half = match p.stage {
                             Stage::Converting => 0.0,
                             Stage::Copying => 0.5,
@@ -1435,6 +1506,46 @@ impl Window {
                 .build()
         });
         self.show_details_dialog("Send Details", rows);
+    }
+
+    /// Asks which of the selected Books to keep, then Merges the others into
+    /// it. Their copies on a Device are orphaned, as when deleting.
+    fn merge_selected(&self) {
+        let imp = self.imp();
+        if imp.sending.get() || imp.importing.get() {
+            return;
+        }
+        let books: Vec<(Book, Option<PathBuf>)> = self
+            .selected_books()
+            .iter()
+            .map(|obj| {
+                let book = obj.book().clone();
+                let cover = self.with_library(|lib| lib.cover_path(&book)).flatten();
+                (book, cover)
+            })
+            .collect();
+        if books.len() < 2 {
+            return;
+        }
+        let thumbnails = imp.thumbnails.borrow().clone().unwrap();
+        let on_merge = glib::clone!(
+            #[weak(rename_to = win)]
+            self,
+            move |keep: BookId, others: Vec<BookId>| {
+                // One may have started while the dialog was open.
+                if win.imp().sending.get() || win.imp().importing.get() {
+                    win.toast("Wait for the import or send to finish, then merge again");
+                    return;
+                }
+                match win.with_library_mut(|lib| lib.merge_books(keep, &others)) {
+                    Some(Err(e)) => win.toast(&format!("Could not merge: {e}")),
+                    Some(Ok(())) => win.toast(&format!("Merged {} books", others.len() + 1)),
+                    None => {}
+                }
+                win.reload();
+            }
+        );
+        merge_dialog::present(self, books, &thumbnails, Box::new(on_merge));
     }
 
     fn confirm_delete_books(&self) {

@@ -91,14 +91,17 @@ impl Device {
         }
     }
 
-    /// Sends `books`, converting EPUBs to AZW3 with each Book's current
-    /// Metadata and Cover. Everything is converted first, and the whole batch
-    /// is refused if it won't fit; otherwise each Book succeeds or fails on
-    /// its own.
+    /// Sends one Format of each of `books`: the `prefer`red one for a Book
+    /// that has it, otherwise its only one. EPUBs are converted to AZW3 with
+    /// the Book's current Metadata and Cover. A copy already on the Device
+    /// is replaced, even by the other Format. Everything is converted first,
+    /// and the whole batch is refused if it won't fit; otherwise each Book
+    /// succeeds or fails on its own.
     pub fn send(
         &self,
         library: &Library,
         books: &[Book],
+        prefer: FormatKind,
         mut progress: impl FnMut(Progress),
     ) -> Result<SendReport> {
         let on_device = self.books()?;
@@ -116,7 +119,7 @@ impl Device {
             .enumerate()
             .map(|(done, book)| {
                 report_progress(Stage::Converting, done, book);
-                prepare(library, book)
+                prepare(library, book, prefer)
             })
             .collect();
         let needed: u64 = prepared.iter().flatten().map(Prepared::size).sum();
@@ -238,30 +241,29 @@ fn megabytes(bytes: u64) -> String {
     format!("{:.1} MB", bytes as f64 / 1_000_000.0)
 }
 
-fn prepare(library: &Library, book: &Book) -> Result<Prepared> {
-    let Some(epub) = book.format(FormatKind::Epub) else {
-        let pdf = book
-            .format(FormatKind::Pdf)
-            .ok_or_else(|| Error::Invalid("the book has no EPUB or PDF".into()))?;
-        return Ok(Prepared {
-            bytes: fs::read(library.format_path(book, pdf))?,
+fn prepare(library: &Library, book: &Book, prefer: FormatKind) -> Result<Prepared> {
+    let format = book
+        .format(prefer)
+        .or_else(|| book.formats.first())
+        .ok_or_else(|| Error::Invalid("the book has no EPUB or PDF".into()))?;
+    let path = library.format_path(book, format);
+    match format.kind {
+        FormatKind::Pdf => Ok(Prepared {
+            bytes: fs::read(path)?,
             extension: FormatKind::Pdf.extension(),
             thumbnail: None,
-        });
-    };
-    let cover = library.cover_path(book).map(fs::read).transpose()?;
-    let asin = asin(book.id);
-    let bytes = azw3::convert(
-        &library.format_path(book, epub),
-        &book.metadata,
-        cover.as_deref(),
-        Some(&asin),
-    )?;
-    Ok(Prepared {
-        bytes,
-        extension: "azw3",
-        thumbnail: cover,
-    })
+        }),
+        FormatKind::Epub => {
+            let cover = library.cover_path(book).map(fs::read).transpose()?;
+            let asin = asin(book.id);
+            let bytes = azw3::convert(&path, &book.metadata, cover.as_deref(), Some(&asin))?;
+            Ok(Prepared {
+                bytes,
+                extension: "azw3",
+                thumbnail: cover,
+            })
+        }
+    }
 }
 
 /// The ASIN a Book's AZW3 is given: UUID-shaped, as the Kindle expects, and
@@ -349,7 +351,9 @@ mod tests {
         }
 
         fn send(&self, books: &[Book]) -> SendReport {
-            self.device().send(&self.library, books, |_| {}).unwrap()
+            self.device()
+                .send(&self.library, books, FormatKind::Epub, |_| {})
+                .unwrap()
         }
     }
 
@@ -464,7 +468,7 @@ mod tests {
         let emma = s.book("emma.pdf", &PdfFixture::new().info("Title", "Emma").build());
         let device = s.device().with_free_space(1000);
 
-        let result = device.send(&s.library, &[dune, emma], |_| {});
+        let result = device.send(&s.library, &[dune, emma], FormatKind::Epub, |_| {});
 
         assert!(matches!(result, Err(Error::Invalid(_))), "{result:?}");
         assert_eq!(fs::read_dir(s.documents()).unwrap().count(), 0);
@@ -485,7 +489,7 @@ mod tests {
 
         let report = s
             .device()
-            .send(&s.library, &books, |p| {
+            .send(&s.library, &books, FormatKind::Epub, |p| {
                 seen.push((p.stage, p.done, p.total, p.current.id));
                 if p.stage == Stage::Copying && p.done == 1 {
                     fs::remove_dir_all(&root).unwrap();
@@ -532,6 +536,51 @@ mod tests {
             .join(format!("Emma - Jane Austen [armarium-{}].pdf", emma.id.0));
         assert_eq!(fs::read(file).unwrap(), pdf);
         assert!(!s.kindle.path().join("system/thumbnails").exists());
+    }
+
+    #[test]
+    fn sends_the_preferred_format_and_replaces_the_other_one() {
+        let mut s = Setup::new();
+        let dune = s.book("dune.epub", &epub("Dune", CHAPTER));
+        let pdf = PdfFixture::new()
+            .info("Title", "Dune")
+            .info("Author", "Frank Herbert")
+            .build();
+        let pdf_path = s.library.root().parent().unwrap().join("dune.pdf");
+        fs::write(&pdf_path, &pdf).unwrap();
+        s.library.import(&[pdf_path], |_| {}).unwrap();
+        let dune = s.library.book(dune.id).unwrap().unwrap();
+        assert_eq!(dune.formats.len(), 2);
+        let name = format!("Dune - Frank Herbert [armarium-{}]", dune.id.0);
+        let send = |prefer| {
+            let report = s
+                .device()
+                .send(&s.library, std::slice::from_ref(&dune), prefer, |_| {})
+                .unwrap();
+            assert_eq!(report.items, [(dune.id, SendOutcome::Sent)]);
+            s.device().books().unwrap()[&dune.id].clone()
+        };
+
+        assert_eq!(
+            send(FormatKind::Pdf),
+            s.documents().join(format!("{name}.pdf"))
+        );
+        assert_eq!(
+            fs::read(s.documents().join(format!("{name}.pdf"))).unwrap(),
+            pdf
+        );
+        fs::create_dir(s.documents().join(format!("{name}.sdr"))).unwrap();
+
+        assert_eq!(
+            send(FormatKind::Epub),
+            s.documents().join(format!("{name}.azw3"))
+        );
+        let mut names: Vec<_> = fs::read_dir(s.documents())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect();
+        names.sort();
+        assert_eq!(names, [format!("{name}.azw3"), format!("{name}.sdr")]);
     }
 
     #[test]

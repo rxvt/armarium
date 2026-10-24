@@ -4,6 +4,7 @@ mod book_object;
 mod book_tile;
 mod bulk_metadata_dialog;
 mod device_watch;
+mod merge_dialog;
 mod metadata_dialog;
 mod profile;
 mod settings;

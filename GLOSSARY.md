@@ -32,6 +32,10 @@ _Avoid_: Thumbnail, artwork
 Bringing a file from outside into the Library, either as a new Book or as a new Format of an existing Book.
 _Avoid_: Add, upload, ingest
 
+**Merge**:
+Combining two or more Books that are the same work into one Book, which keeps one of their Metadata and Covers and gains all of their Formats. The other Books cease to exist; no file is lost except a duplicate Format, which goes to the Trash.
+_Avoid_: Combine, group, join, link
+
 **Reader**:
 The external application the user's system opens a Format with.
 _Avoid_: Viewer
@@ -41,7 +45,7 @@ An external e-reader, connected over USB, that the Library can put Books on. The
 _Avoid_: Kindle (when meaning Devices in general), reader, e-reader
 
 **Send**:
-Putting a Book onto a connected Device, converted if the Device can't read its Formats as they are. The Book stays in the Library.
+Putting one of a Book's Formats onto a connected Device, converted if the Device can't read it as it is. A Device holds at most one copy of a Book. The Book stays in the Library.
 _Avoid_: Push, sync, transfer, upload, export
 
 **Remove**:

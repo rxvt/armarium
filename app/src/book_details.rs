@@ -39,6 +39,8 @@ mod imp {
         #[template_child]
         pub edit_many_button: TemplateChild<gtk::Button>,
         #[template_child]
+        pub merge_many_button: TemplateChild<gtk::Button>,
+        #[template_child]
         pub send_many_button: TemplateChild<gtk::Button>,
         #[template_child]
         pub formats_list: TemplateChild<gtk::ListBox>,
@@ -177,7 +179,8 @@ impl BookDetails {
     }
 
     /// Shows that `count` Books (none, or several) are selected. With
-    /// several, the Edit button fires `win.edit` on them all.
+    /// several, the Edit and Merge buttons fire `win.edit` and `win.merge`
+    /// on them all.
     pub fn show_selection_count(&self, count: u64) {
         let imp = self.imp();
         let title = match count {
@@ -188,6 +191,9 @@ impl BookDetails {
         imp.edit_many_button
             .set_label(&format!("_Edit {count} Books…"));
         imp.edit_many_button.set_visible(count > 1);
+        imp.merge_many_button
+            .set_label(&format!("_Merge {count} Books…"));
+        imp.merge_many_button.set_visible(count > 1);
         imp.stack.set_visible_child_name("none");
     }
 }

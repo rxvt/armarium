@@ -11,6 +11,7 @@ pub mod extract;
 mod fixtures;
 pub mod import;
 pub mod library;
+pub mod merge;
 pub mod model;
 mod naming;
 pub mod suggest;
