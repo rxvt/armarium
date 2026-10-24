@@ -225,6 +225,8 @@ impl Picker {
         if self.downloading.replace(true) {
             return;
         }
+        // A new search drops this tile, and the download with it.
+        let search_id = self.search_id.get();
         spinner.set_visible(true);
         let weak = Rc::downgrade(self);
         glib::spawn_future_local(async move {
@@ -234,6 +236,9 @@ impl Picker {
                 return;
             };
             picker.downloading.set(false);
+            if picker.search_id.get() != search_id {
+                return;
+            }
             match result {
                 Ok(bytes) => picker.choose(bytes.to_vec()),
                 Err(e) => picker.toast(&e),
