@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use armarium_core::cover;
+use gtk::prelude::*;
 use gtk::{gdk, gio};
 
 use crate::profile;
@@ -17,6 +18,10 @@ use crate::profile;
 const THUMB_MAX_SIDE: u32 = 720;
 /// Textures kept in memory; tiles scrolled far away reload from disk.
 const MEMORY_ENTRIES: usize = 300;
+/// How far a Cover's aspect ratio may stray from 2:3 and still fill its
+/// picture; cropping that little is invisible, and it avoids slivers of
+/// backdrop from rounding.
+const FILL_TOLERANCE: f64 = 0.03;
 
 pub struct Thumbnails {
     dir: PathBuf,
@@ -81,4 +86,85 @@ fn load_blocking(dir: &Path, cover: &Path) -> Option<gdk::Texture> {
         cover::thumbnail(cover, &thumb, THUMB_MAX_SIDE).ok()?;
     }
     gdk::Texture::from_filename(&thumb).ok()
+}
+
+/// Shows `texture` in a 2:3 Cover `picture`, or clears it. A Cover close to
+/// 2:3 fills the picture; any other is shown whole on a neutral backdrop
+/// rather than cropped.
+pub fn show_cover(picture: &gtk::Picture, texture: Option<&gdk::Texture>) {
+    let letterbox = texture.is_some_and(|t| !fills_2_3(t.width(), t.height()));
+    if letterbox {
+        picture.set_content_fit(gtk::ContentFit::Contain);
+        picture.add_css_class("cover-backdrop");
+    } else {
+        picture.set_content_fit(gtk::ContentFit::Cover);
+        picture.remove_css_class("cover-backdrop");
+    }
+    picture.set_paintable(texture);
+}
+
+fn fills_2_3(width: i32, height: i32) -> bool {
+    if width <= 0 || height <= 0 {
+        return true;
+    }
+    let ratio = (f64::from(width) / f64::from(height)) / (2.0 / 3.0);
+    (ratio - 1.0).abs() <= FILL_TOLERANCE
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn texture(width: i32, height: i32) -> gdk::Texture {
+        let bytes = gtk::glib::Bytes::from_owned(vec![0u8; (width * height * 4) as usize]);
+        gdk::MemoryTexture::new(
+            width,
+            height,
+            gdk::MemoryFormat::R8g8b8a8,
+            &bytes,
+            width as usize * 4,
+        )
+        .upcast()
+    }
+
+    /// One test, since GTK widgets belong to the thread that initialised
+    /// GTK. Skipped without a display.
+    #[test]
+    fn show_cover_letterboxes_only_other_shapes() {
+        if gtk::init().is_err() {
+            return;
+        }
+        let picture = gtk::Picture::new();
+        let shown = |picture: &gtk::Picture| {
+            (
+                picture.content_fit(),
+                picture.has_css_class("cover-backdrop"),
+                picture.paintable().is_some(),
+            )
+        };
+
+        show_cover(&picture, Some(&texture(974, 1200)));
+        assert_eq!(shown(&picture), (gtk::ContentFit::Contain, true, true));
+
+        show_cover(&picture, Some(&texture(600, 900)));
+        assert_eq!(shown(&picture), (gtk::ContentFit::Cover, false, true));
+
+        show_cover(&picture, Some(&texture(900, 900)));
+        show_cover(&picture, None);
+        assert_eq!(shown(&picture), (gtk::ContentFit::Cover, false, false));
+    }
+
+    #[test]
+    fn covers_near_2_3_fill() {
+        assert!(fills_2_3(600, 900));
+        assert!(fills_2_3(1000, 1530));
+        assert!(fills_2_3(1000, 1480));
+    }
+
+    #[test]
+    fn other_shapes_are_letterboxed() {
+        assert!(!fills_2_3(974, 1200));
+        assert!(!fills_2_3(900, 900));
+        assert!(!fills_2_3(500, 900));
+    }
 }

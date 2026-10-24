@@ -10,7 +10,7 @@ use gtk::prelude::*;
 
 use crate::book_object::{self, BookObject};
 use crate::book_tile::authors_line;
-use crate::thumbnails::Thumbnails;
+use crate::thumbnails::{self, Thumbnails};
 
 /// Finds a Book's `cover.jpg`, which needs the window's Library.
 pub type CoverPath = Rc<dyn Fn(&Book) -> Option<PathBuf>>;
@@ -114,7 +114,6 @@ fn cover_column(
     factory.connect_setup(move |_, cell| {
         let cell = cell.downcast_ref::<gtk::ColumnViewCell>().unwrap();
         let picture = gtk::Picture::builder()
-            .content_fit(gtk::ContentFit::Cover)
             .can_shrink(true)
             .width_request(COVER_WIDTH)
             .height_request(COVER_WIDTH * 3 / 2)
@@ -145,7 +144,7 @@ fn cover_column(
         ) else {
             return;
         };
-        picture.set_paintable(gtk::gdk::Paintable::NONE);
+        thumbnails::show_cover(&picture, None);
         picture.add_css_class("cover-placeholder");
         let Some(cover) = cover_path(&obj.book()) else {
             return;
@@ -159,14 +158,14 @@ fn cover_column(
                 && cell.item().as_ref() == Some(obj.upcast_ref())
                 && let Some(texture) = texture
             {
-                picture.set_paintable(Some(&texture));
+                thumbnails::show_cover(&picture, Some(&texture));
                 picture.remove_css_class("cover-placeholder");
             }
         });
     });
     factory.connect_unbind(|_, cell| {
         if let Some(picture) = cover_picture(cell.downcast_ref().unwrap()) {
-            picture.set_paintable(gtk::gdk::Paintable::NONE);
+            thumbnails::show_cover(&picture, None);
         }
     });
     let column = gtk::ColumnViewColumn::new(None, Some(factory));

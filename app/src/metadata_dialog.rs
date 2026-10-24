@@ -13,7 +13,7 @@ use armarium_core::text;
 use gtk::{gio, glib};
 
 use crate::suggestion_popover;
-use crate::thumbnails::Thumbnails;
+use crate::thumbnails::{self, Thumbnails};
 
 /// Saves the edited Metadata and, if one was chosen, the new Cover image.
 /// An `Err` is shown in the dialog, which stays open.
@@ -230,7 +230,7 @@ impl MetadataDialog {
                 if let (Some(texture), Some(picture)) =
                     (thumbnails.load(cover).await, picture.upgrade())
                 {
-                    picture.set_paintable(Some(&texture));
+                    thumbnails::show_cover(&picture, Some(&texture));
                     picture.remove_css_class("cover-placeholder");
                 }
             });
@@ -295,7 +295,7 @@ impl MetadataDialog {
                     let imp = dialog.imp();
                     match gtk::gdk::Texture::from_filename(&path) {
                         Ok(texture) => {
-                            imp.cover_picture.set_paintable(Some(&texture));
+                            thumbnails::show_cover(&imp.cover_picture, Some(&texture));
                             imp.cover_picture.remove_css_class("cover-placeholder");
                             imp.new_cover.replace(Some(path));
                         }

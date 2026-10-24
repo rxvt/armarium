@@ -11,7 +11,7 @@ use armarium_core::model::{Book, BookId};
 use gtk::glib;
 
 use crate::book_tile::authors_line;
-use crate::thumbnails::Thumbnails;
+use crate::thumbnails::{self, Thumbnails};
 
 const COVER_WIDTH: i32 = 32;
 
@@ -142,7 +142,6 @@ fn describe(books: &[Book], keep: usize) -> (String, bool) {
 /// The Book's Cover at 2:3, `COVER_WIDTH` pixels wide, or a placeholder.
 fn cover_picture(cover: Option<PathBuf>, thumbnails: &Rc<Thumbnails>) -> gtk::Widget {
     let picture = gtk::Picture::builder()
-        .content_fit(gtk::ContentFit::Cover)
         .can_shrink(true)
         .width_request(COVER_WIDTH)
         .height_request(COVER_WIDTH * 3 / 2)
@@ -178,7 +177,7 @@ fn cover_picture(cover: Option<PathBuf>, thumbnails: &Rc<Thumbnails>) -> gtk::Wi
                 && let Some(picture) = weak.upgrade()
             {
                 picture.remove_css_class("cover-placeholder");
-                picture.set_paintable(Some(&texture));
+                thumbnails::show_cover(&picture, Some(&texture));
             }
         });
     }

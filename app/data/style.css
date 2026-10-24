@@ -18,6 +18,11 @@
   background: linear-gradient(to bottom, alpha(var(--accent-bg-color), 0.25), alpha(var(--accent-bg-color), 0.55));
 }
 
+/* Behind a Cover shown whole because it isn't 2:3. */
+.cover-backdrop {
+  background: alpha(currentColor, 0.08);
+}
+
 .list-cover {
   border-radius: 3px;
   margin: 3px 0;
