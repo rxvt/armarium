@@ -34,6 +34,9 @@ struct Picker {
     /// Bumped by each search, so a slow earlier one doesn't show its results.
     search_id: Cell<u32>,
     downloading: Cell<bool>,
+    /// Set once an image is handed back, so a download still finishing while
+    /// the dialog closes can't replace it.
+    chosen: Cell<bool>,
     on_choose: ChooseFn,
 }
 
@@ -106,6 +109,7 @@ pub fn present(parent: &impl IsA<gtk::Widget>, metadata: &Metadata, on_choose: C
         tiles: RefCell::default(),
         search_id: Cell::new(0),
         downloading: Cell::new(false),
+        chosen: Cell::new(false),
         on_choose,
     });
     // The widgets' handlers hold the picker weakly; this is the strong
@@ -252,22 +256,30 @@ impl Picker {
             .build();
         let parent = self.dialog.root().and_downcast::<gtk::Window>();
         let weak = Rc::downgrade(self);
-        file_dialog.open(parent.as_ref(), gio::Cancellable::NONE, move |result| {
-            let (Some(picker), Some(path)) = (weak.upgrade(), result.ok().and_then(|f| f.path()))
-            else {
+        glib::spawn_future_local(async move {
+            let Ok(file) = file_dialog.open_future(parent.as_ref()).await else {
                 return;
             };
-            match std::fs::read(&path) {
-                Ok(bytes) => picker.choose(bytes),
-                Err(e) => picker.toast(&format!("Could not read the image: {e}")),
+            let contents = file.load_contents_future().await;
+            let Some(picker) = weak.upgrade() else {
+                return;
+            };
+            match contents {
+                Ok((bytes, _etag)) => picker.choose(bytes.to_vec()),
+                Err(e) => picker.toast(&format!("Could not read the image: {}", e.message())),
             }
         });
     }
 
-    /// Hands `bytes` back if they are an image GTK can show, and closes.
+    /// Hands `bytes` back if they are an image GTK can show, and closes. Only
+    /// the first image chosen counts.
     fn choose(&self, bytes: Vec<u8>) {
+        if self.chosen.get() {
+            return;
+        }
         match gdk::Texture::from_bytes(&glib::Bytes::from(&bytes)) {
             Ok(texture) => {
+                self.chosen.set(true);
                 (self.on_choose)(bytes, texture);
                 self.dialog.close();
             }
