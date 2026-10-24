@@ -112,13 +112,13 @@ impl Library {
         Ok(())
     }
 
-    /// Replaces a Book's Cover with the image at `image`. The new Cover is
-    /// never overridden by a later Import.
-    pub fn set_cover(&mut self, id: BookId, image: &Path) -> Result<()> {
+    /// Replaces a Book's Cover with `image`, an encoded JPEG, PNG, GIF or
+    /// WebP. The new Cover is never overridden by a later Import.
+    pub fn set_cover(&mut self, id: BookId, image: &[u8]) -> Result<()> {
         let book = self.existing_book(id)?;
         let dir = self.book_dir(&book);
         fs::create_dir_all(&dir)?;
-        cover::save(&fs::read(image)?, &dir.join(naming::COVER_FILE_NAME))?;
+        cover::save(image, &dir.join(naming::COVER_FILE_NAME))?;
         self.db
             .as_ref()
             .unwrap()
@@ -378,9 +378,12 @@ mod tests {
     #[test]
     fn user_cover_replaces_current_one() {
         let (mut s, book) = setup();
-        let image = s.dir.path().join("new.png");
+        let mut image = Vec::new();
         image::RgbImage::from_pixel(10, 10, image::Rgb([0, 0, 255]))
-            .save(&image)
+            .write_to(
+                &mut std::io::Cursor::new(&mut image),
+                image::ImageFormat::Png,
+            )
             .unwrap();
         s.library.set_cover(book.id, &image).unwrap();
 
@@ -391,9 +394,7 @@ mod tests {
             .to_rgb8();
         assert!(saved.get_pixel(5, 5).0[2] > 200);
 
-        let garbage = s.dir.path().join("garbage.png");
-        fs::write(&garbage, b"nope").unwrap();
-        assert!(s.library.set_cover(book.id, &garbage).is_err());
+        assert!(s.library.set_cover(book.id, b"nope").is_err());
     }
 
     #[test]

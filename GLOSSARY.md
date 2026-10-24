@@ -28,6 +28,10 @@ _Avoid_: Collection, saga, cycle
 The single image representing a Book in the Library.
 _Avoid_: Thumbnail, artwork
 
+**Cover Candidate**:
+An image offered to the user as a possible Cover for a Book, either from a file they choose or found online. It becomes the Cover only when chosen.
+_Avoid_: Suggestion, result, thumbnail
+
 **Import**:
 Bringing a file from outside into the Library, either as a new Book or as a new Format of an existing Book.
 _Avoid_: Add, upload, ingest

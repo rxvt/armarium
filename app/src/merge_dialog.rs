@@ -148,26 +148,7 @@ fn cover_picture(cover: Option<PathBuf>, thumbnails: &Rc<Thumbnails>) -> gtk::Wi
         .overflow(gtk::Overflow::Hidden)
         .css_classes(["cover", "list-cover", "cover-placeholder"])
         .build();
-    // A Picture asks for its image's full size; the clamps hold it to the
-    // Cover's.
-    let clamp = |child: &gtk::Widget, orientation, size| {
-        adw::Clamp::builder()
-            .orientation(orientation)
-            .maximum_size(size)
-            .tightening_threshold(size)
-            .child(child)
-            .build()
-            .upcast::<gtk::Widget>()
-    };
-    let sized = clamp(
-        &clamp(
-            picture.upcast_ref(),
-            gtk::Orientation::Horizontal,
-            COVER_WIDTH,
-        ),
-        gtk::Orientation::Vertical,
-        COVER_WIDTH * 3 / 2,
-    );
+    let sized = thumbnails::sized_cover(&picture, COVER_WIDTH);
     sized.set_valign(gtk::Align::Center);
     if let Some(cover) = cover {
         let thumbnails = thumbnails.clone();
