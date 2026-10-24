@@ -14,9 +14,9 @@ const TIMEOUT_SECONDS: u32 = 10;
 /// The app's one HTTP session, with the searches it has made.
 struct Client {
     session: soup::Session,
-    /// Apple allows about 20 requests a minute, so a search is made once per
-    /// run of the app. Failed searches are not kept.
-    searches: RefCell<HashMap<String, Rc<Vec<CoverCandidate>>>>,
+    /// Responses by search term. Apple allows about 20 requests a minute, so
+    /// a search is made once per run of the app. Failed searches are not kept.
+    searches: RefCell<HashMap<String, glib::Bytes>>,
 }
 
 thread_local! {
@@ -39,15 +39,16 @@ fn client() -> Rc<Client> {
 }
 
 /// Searches Apple Books for `term`, putting results titled `title` first.
-pub async fn search(term: &str, title: &str) -> Result<Rc<Vec<CoverCandidate>>, String> {
+pub async fn search(term: &str, title: &str) -> Result<Vec<CoverCandidate>, String> {
     let client = client();
     let key = term.trim().to_lowercase();
-    if let Some(found) = client.searches.borrow().get(&key) {
-        return Ok(found.clone());
-    }
-    let json = get(&client, &cover_search::search_url(term)).await?;
-    let found = Rc::new(cover_search::parse_results(&json, title).map_err(|e| e.to_string())?);
-    client.searches.borrow_mut().insert(key, found.clone());
+    let cached = client.searches.borrow().get(&key).cloned();
+    let json = match cached {
+        Some(json) => json,
+        None => get(&client, &cover_search::search_url(term)).await?,
+    };
+    let found = cover_search::parse_results(&json, title).map_err(|e| e.to_string())?;
+    client.searches.borrow_mut().insert(key, json);
     Ok(found)
 }
 

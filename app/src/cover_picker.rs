@@ -34,9 +34,9 @@ struct Picker {
     /// Bumped by each search, so a slow earlier one doesn't show its results.
     search_id: Cell<u32>,
     downloading: Cell<bool>,
-    /// Set once an image is handed back, so a download still finishing while
-    /// the dialog closes can't replace it.
-    chosen: Cell<bool>,
+    /// Set once the picker starts closing, whether an image was chosen or the
+    /// user cancelled, so a download or upload still finishing is ignored.
+    closing: Cell<bool>,
     on_choose: ChooseFn,
 }
 
@@ -109,7 +109,7 @@ pub fn present(parent: &impl IsA<gtk::Widget>, metadata: &Metadata, on_choose: C
         tiles: RefCell::default(),
         search_id: Cell::new(0),
         downloading: Cell::new(false),
-        chosen: Cell::new(false),
+        closing: Cell::new(false),
         on_choose,
     });
     // The widgets' handlers hold the picker weakly; this is the strong
@@ -118,6 +118,19 @@ pub fn present(parent: &impl IsA<gtk::Widget>, metadata: &Metadata, on_choose: C
     dialog.connect_closed(move |_| drop(holder.take()));
 
     let weak = Rc::downgrade(&picker);
+    // Every way of closing (button, Escape, a choice) comes through here
+    // first, while `closed` only follows the closing animation.
+    dialog.set_can_close(false);
+    dialog.connect_close_attempt(glib::clone!(
+        #[strong]
+        weak,
+        move |dialog| {
+            if let Some(picker) = weak.upgrade() {
+                picker.closing.set(true);
+            }
+            dialog.force_close();
+        }
+    ));
     entry.connect_activate(glib::clone!(
         #[strong]
         weak,
@@ -169,8 +182,8 @@ impl Picker {
                 Ok(found) if found.is_empty() => picker.set_status(Some("No covers found")),
                 Ok(found) => {
                     picker.set_status(None);
-                    for candidate in found.iter() {
-                        picker.add_tile(candidate.clone());
+                    for candidate in found {
+                        picker.add_tile(candidate);
                     }
                 }
             }
@@ -276,15 +289,14 @@ impl Picker {
         });
     }
 
-    /// Hands `bytes` back if they are an image GTK can show, and closes. Only
-    /// the first image chosen counts.
+    /// Hands `bytes` back if they are an image GTK can show, and closes.
+    /// Ignored once the picker is closing, so only the first choice counts.
     fn choose(&self, bytes: Vec<u8>) {
-        if self.chosen.get() {
+        if self.closing.get() {
             return;
         }
         match gdk::Texture::from_bytes(&glib::Bytes::from(&bytes)) {
             Ok(texture) => {
-                self.chosen.set(true);
                 (self.on_choose)(bytes, texture);
                 self.dialog.close();
             }
