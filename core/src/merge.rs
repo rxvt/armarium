@@ -80,8 +80,14 @@ impl Library {
         let other_dir = self.book_dir(other);
         let mut moves: Vec<(FormatId, String)> = Vec::new();
         let mut renames: Vec<(PathBuf, PathBuf)> = Vec::new();
+        // Puts moved Formats back, recreating the other Book's folder in case
+        // it went to the Trash before the database change failed. Anything
+        // else in it, its duplicate Formats and Cover, stays in the Trash.
         let undo = |renames: &[(PathBuf, PathBuf)]| {
             for (from, to) in renames.iter().rev() {
+                if let Some(dir) = from.parent() {
+                    let _ = fs::create_dir_all(dir);
+                }
                 let _ = fs::rename(to, from);
             }
         };
@@ -298,6 +304,32 @@ mod tests {
                 assert!(s.library.format_path(book, f).is_file());
             }
         }
+    }
+
+    #[test]
+    fn a_failure_after_trashing_still_puts_moved_formats_back() {
+        let mut s = setup();
+        let epub = s.dune_epub();
+        let pdf = s.dune_pdf(1);
+        let pdf_dir = s.library.book_dir(&pdf);
+        let pdf_file = s.library.format_path(&pdf, &pdf.formats[0]);
+        // Stands in for the commit failing once the folder is in the Trash.
+        let trash_dir = s.trash_dir.clone();
+        s.library.trash = Box::new(move |path| {
+            fs::rename(path, trash_dir.join("gone"))?;
+            Err(std::io::Error::other("commit failed"))
+        });
+
+        assert!(s.library.merge_books(epub.id, &[pdf.id]).is_err());
+
+        assert_eq!(s.library.book(epub.id).unwrap().unwrap(), epub);
+        assert_eq!(s.library.book(pdf.id).unwrap().unwrap(), pdf);
+        assert!(pdf_dir.is_dir());
+        assert!(pdf_file.is_file(), "the moved PDF is back where it was");
+        assert_eq!(
+            file_names(&s.library.book_dir(&epub)),
+            ["Dune - Frank Herbert.epub"]
+        );
     }
 
     #[test]
