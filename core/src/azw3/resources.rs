@@ -23,7 +23,14 @@ const MAX_THUMB_DIMEN: (u32, u32) = (180, 240);
 /// Stands in for images no text refers to, so record numbers stay put.
 const PLACEHOLDER_GIF: &[u8] = b"GIF89a\x01\x00\x01\x00\xf0\x00\x00\x00\x00\x00\xff\xff\xff!\xf9\x04\x01\x00\x00\x00\x00!\xfe calibre-placeholder-gif-for-azw3\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;";
 
-const RASTER_IMAGES: &[&str] = &["image/gif", "image/jpeg", "image/png", "image/webp"];
+/// `image/jpg` is not a registered type, but EPUBs often use it for JPEGs.
+const RASTER_IMAGES: &[&str] = &[
+    "image/gif",
+    "image/jpeg",
+    "image/jpg",
+    "image/png",
+    "image/webp",
+];
 
 #[derive(Debug, Default)]
 pub struct Resources {
@@ -327,8 +334,20 @@ mod tests {
     }
 
     #[test]
-    fn library_cover_is_added_for_an_image_jpg_cover() {
-        assert_library_cover_added(&oeb_with_cover("image/jpg", Data::Raw(jpeg(8, 8))));
+    fn library_cover_replaces_an_image_jpg_cover() {
+        let oeb = oeb_with_cover("image/jpg", Data::Raw(jpeg(8, 8)));
+        let library = jpeg(16, 16);
+        let res = Resources::new(&oeb, Some(&library));
+        assert_eq!(res.cover_offset, Some(0));
+        assert_eq!(res.item_map["cover"], 1);
+        assert_eq!(res.records[0], library);
+    }
+
+    #[test]
+    fn image_jpg_items_are_jpeg_records() {
+        let res = Resources::new(&oeb_with_cover("image/jpg", Data::Raw(jpeg(8, 8))), None);
+        assert_eq!(res.item_map["cover"], 1);
+        assert_eq!(res.mime_map["cover"], "image/jpeg");
     }
 
     #[test]
@@ -336,6 +355,9 @@ mod tests {
         let res = Resources::new(&oeb_with_cover("image/jpeg", Data::Raw(jpeg(8, 8))), None);
         assert_eq!(res.cover_offset, Some(0));
         let res = Resources::new(&oeb_with_cover("image/jpg", Data::Raw(jpeg(8, 8))), None);
+        assert_eq!(res.cover_offset, Some(0));
+        let svg = dom::parse(br#"<svg xmlns="http://www.w3.org/2000/svg"/>"#).unwrap();
+        let res = Resources::new(&oeb_with_cover("image/svg+xml", Data::Svg(svg)), None);
         assert_eq!(res.cover_offset, None);
         assert!(res.records.is_empty());
     }

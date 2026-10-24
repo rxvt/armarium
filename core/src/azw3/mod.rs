@@ -221,6 +221,37 @@ mod tests {
     }
 
     #[test]
+    fn images_declared_as_image_jpg_are_embedded() {
+        let mut jpeg = Vec::new();
+        image::DynamicImage::ImageRgb8(image::RgbImage::new(30, 40))
+            .write_to(
+                &mut std::io::Cursor::new(&mut jpeg),
+                image::ImageFormat::Jpeg,
+            )
+            .unwrap();
+        let epub = EpubFixture::new()
+            .manifest(
+                r#"<item id="c1" href="one.xhtml" media-type="application/xhtml+xml"/>
+                <item id="pic" href="pic.jpg" media-type="image/jpg"/>"#,
+            )
+            .spine(r#"<itemref idref="c1"/>"#)
+            .file(
+                "one.xhtml",
+                br#"<html xmlns="http://www.w3.org/1999/xhtml"><head><title>1</title></head>
+<body><p><img src="pic.jpg"/></p></body></html>"#,
+            )
+            .file("pic.jpg", &jpeg)
+            .build();
+        let dir = TempDir::new();
+        let path = dir.path().join("book.epub");
+        std::fs::write(&path, epub).unwrap();
+
+        let db = convert(&path, &Metadata::default(), None, None).unwrap();
+        let text = String::from_utf8(text(&records(&db))).unwrap();
+        assert!(text.contains(r#"<img src="kindle:embed:0001?mime=image/jpeg"/>"#));
+    }
+
+    #[test]
     fn the_asin_is_the_books_uuid_unless_given() {
         let dir = TempDir::new();
         let path = dir.path().join("book.epub");
