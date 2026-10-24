@@ -3,6 +3,8 @@ mod book_list;
 mod book_object;
 mod book_tile;
 mod bulk_metadata_dialog;
+mod cover_picker;
+mod cover_search;
 mod device_watch;
 mod merge_dialog;
 mod metadata_dialog;

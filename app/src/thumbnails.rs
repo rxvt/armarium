@@ -103,6 +103,25 @@ pub fn show_cover(picture: &gtk::Picture, texture: Option<&gdk::Texture>) {
     picture.set_paintable(texture);
 }
 
+/// `picture` held to a 2:3 Cover `width` pixels wide. A Picture asks for its
+/// image's full size; the clamps hold it to the Cover's.
+pub fn sized_cover(picture: &gtk::Picture, width: i32) -> gtk::Widget {
+    let clamp = |child: &gtk::Widget, orientation, size| {
+        adw::Clamp::builder()
+            .orientation(orientation)
+            .maximum_size(size)
+            .tightening_threshold(size)
+            .child(child)
+            .build()
+            .upcast::<gtk::Widget>()
+    };
+    clamp(
+        &clamp(picture.upcast_ref(), gtk::Orientation::Horizontal, width),
+        gtk::Orientation::Vertical,
+        width * 3 / 2,
+    )
+}
+
 fn fills_2_3(width: i32, height: i32) -> bool {
     if width <= 0 || height <= 0 {
         return true;

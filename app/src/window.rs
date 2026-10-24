@@ -1230,7 +1230,7 @@ impl Window {
         &self,
         id: BookId,
         metadata: Metadata,
-        cover: Option<PathBuf>,
+        cover: Option<Vec<u8>>,
     ) -> Result<(), String> {
         let result = self.with_library_mut(|lib| {
             let book = lib.update_metadata(id, metadata)?;

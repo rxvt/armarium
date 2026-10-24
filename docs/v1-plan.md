@@ -29,6 +29,8 @@ Vetted on crates.io in October 2026: each crate has a long history, tens of thou
 | `quick-xml` | tafia/quick-xml | |
 | `image` | image-rs org | |
 | `flate2` | rust-lang | Already pulled in by `zip`; used directly for AZW3 font records, with the same `zlib-rs` backend |
+| `soup3` | gtk-rs project | Bindings to the system libsoup3 for the online Cover search; TLS comes from the system's glib-networking. See [ADR 0009](./adr/0009-online-cover-search-via-libsoup.md) |
+| `serde`, `serde_json` | serde-rs (dtolnay) | Reading the Apple Books search response |
 
 Rules:
 
@@ -63,7 +65,7 @@ No crate version, toolchain or tool is used until it has been public for at leas
 - Cover grid view and list view, with a toggle.
 - Live search over title, authors and series.
 - Sorting (default: date added, newest first).
-- Book details sidebar; Metadata editing in a dialog; manual Cover replacement.
+- Book details sidebar; Metadata editing in a dialog; Cover replacement from an image file or from covers found in Apple Books ([ADR 0009](./adr/0009-online-cover-search-via-libsoup.md)).
 - Open a Format in the external Reader.
 - Delete Books or individual Formats (to Trash), including multi-select delete.
 
@@ -72,7 +74,7 @@ No crate version, toolchain or tool is used until it has been public for at leas
 - Kindle or any other Device support (see [Later](#later)). The EPUB to AZW3 conversion it needs is already in `core`.
 - Formats beyond EPUB and PDF (CBZ, TXT, MOBI/AZW3, …). Format handling should be easy to extend.
 - Built-in Reader.
-- Online metadata lookup.
+- Online metadata lookup (other than the Cover search above).
 - Tags, ratings, reading status/progress.
 - Bulk Metadata editing.
 - Writing Metadata back into files.

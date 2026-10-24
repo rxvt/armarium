@@ -10,14 +10,15 @@ use adw::subclass::prelude::*;
 use armarium_core::model::{Author, Book, Metadata};
 use armarium_core::suggest::Suggestions;
 use armarium_core::text;
-use gtk::{gio, glib};
+use gtk::glib;
 
+use crate::cover_picker;
 use crate::suggestion_popover;
 use crate::thumbnails::{self, Thumbnails};
 
-/// Saves the edited Metadata and, if one was chosen, the new Cover image.
-/// An `Err` is shown in the dialog, which stays open.
-pub type SaveFn = Box<dyn Fn(Metadata, Option<PathBuf>) -> Result<(), String>>;
+/// Saves the edited Metadata and, if one was chosen, the new Cover image
+/// (encoded). An `Err` is shown in the dialog, which stays open.
+pub type SaveFn = Box<dyn Fn(Metadata, Option<Vec<u8>>) -> Result<(), String>>;
 
 /// One author's name and sort name rows, with a button to remove them.
 pub struct AuthorRows {
@@ -122,7 +123,8 @@ mod imp {
         pub description_view: TemplateChild<gtk::TextView>,
 
         pub authors: RefCell<Vec<AuthorRows>>,
-        pub new_cover: RefCell<Option<PathBuf>>,
+        /// The chosen Cover image, still encoded.
+        pub new_cover: RefCell<Option<Vec<u8>>>,
         pub on_save: RefCell<Option<SaveFn>>,
     }
 
@@ -268,44 +270,19 @@ impl MetadataDialog {
         }
     }
 
+    /// Opens the Cover picker, searching with the Metadata as edited so far.
     fn choose_cover(&self) {
-        let filter = gtk::FileFilter::new();
-        filter.set_name(Some("Images"));
-        for ext in ["jpg", "jpeg", "png", "gif", "webp"] {
-            filter.add_suffix(ext);
-        }
-        let filters = gio::ListStore::new::<gtk::FileFilter>();
-        filters.append(&filter);
-        let dialog = gtk::FileDialog::builder()
-            .title("Replace Cover")
-            .accept_label("_Choose")
-            .filters(&filters)
-            .build();
-        let parent = self.root().and_downcast::<gtk::Window>();
-        dialog.open(
-            parent.as_ref(),
-            gio::Cancellable::NONE,
-            glib::clone!(
-                #[weak(rename_to = dialog)]
-                self,
-                move |result| {
-                    let Some(path) = result.ok().and_then(|f| f.path()) else {
-                        return;
-                    };
-                    let imp = dialog.imp();
-                    match gtk::gdk::Texture::from_filename(&path) {
-                        Ok(texture) => {
-                            thumbnails::show_cover(&imp.cover_picture, Some(&texture));
-                            imp.cover_picture.remove_css_class("cover-placeholder");
-                            imp.new_cover.replace(Some(path));
-                        }
-                        Err(e) => {
-                            dialog.toast(&format!("Could not read the image: {}", e.message()))
-                        }
-                    }
-                }
-            ),
-        );
+        let on_choose = Box::new(glib::clone!(
+            #[weak(rename_to = dialog)]
+            self,
+            move |bytes, texture: gtk::gdk::Texture| {
+                let imp = dialog.imp();
+                thumbnails::show_cover(&imp.cover_picture, Some(&texture));
+                imp.cover_picture.remove_css_class("cover-placeholder");
+                imp.new_cover.replace(Some(bytes));
+            }
+        ));
+        cover_picker::present(self, &self.metadata(), on_choose);
     }
 
     fn series_index(&self) -> Result<Option<f64>, ()> {
