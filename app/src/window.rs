@@ -22,7 +22,7 @@ use crate::book_details::BookDetails;
 use crate::book_list;
 use crate::book_object::BookObject;
 use crate::book_tile::BookTile;
-use crate::bulk_metadata_dialog::BulkMetadataDialog;
+use crate::bulk_metadata_dialog::{BulkMetadataDialog, DoneFn};
 use crate::device_watch::{Connected, DeviceWatch};
 use crate::merge_dialog;
 use crate::metadata_dialog::MetadataDialog;
@@ -84,6 +84,8 @@ mod imp {
         pub settings: OnceCell<Settings>,
         pub importing: Cell<bool>,
         pub sending: Cell<bool>,
+        /// Set while a bulk Metadata edit is being saved.
+        pub editing: Cell<bool>,
         /// Set when the details sidebar was toggled off with I.
         pub details_hidden: Cell<bool>,
         pub device_watch: OnceCell<DeviceWatch>,
@@ -321,17 +323,12 @@ impl Window {
         }
         self.action_set_enabled("win.edit", count > 0);
         self.action_set_enabled("win.delete", count > 0);
-        // A Send or Import in progress reads the Books' files.
-        self.action_set_enabled(
-            "win.merge",
-            count > 1 && !imp.sending.get() && !imp.importing.get(),
-        );
+        // A Send, Import or bulk edit in progress reads the Books' files.
+        let busy = imp.sending.get() || imp.importing.get() || imp.editing.get();
+        self.action_set_enabled("win.merge", count > 1 && !busy);
         let connected = imp.device.borrow().is_some();
         imp.details.set_can_send(connected && count > 0);
-        self.action_set_enabled(
-            "win.send-to-device",
-            connected && count > 0 && !imp.sending.get() && !imp.importing.get(),
-        );
+        self.action_set_enabled("win.send-to-device", connected && count > 0 && !busy);
     }
 
     fn toggle_details(&self) {
@@ -729,6 +726,10 @@ impl Window {
             self.toast("Wait for the books to be sent to the Kindle");
             return;
         }
+        if imp.editing.get() {
+            self.toast("Wait for the Metadata to be saved");
+            return;
+        }
         let Some(root) = self.with_library(|lib| lib.root().to_owned()) else {
             return;
         };
@@ -1096,6 +1097,10 @@ impl Window {
             self.toast("Wait for the import to finish");
             return;
         }
+        if self.imp().editing.get() {
+            self.toast("Wait for the Metadata to be saved");
+            return;
+        }
         let dialog = gtk::FileDialog::builder()
             .title("Choose Library Folder")
             .accept_label("_Choose")
@@ -1161,9 +1166,7 @@ impl Window {
         let on_save = Box::new(glib::clone!(
             #[weak(rename_to = win)]
             self,
-            #[upgrade_or_else]
-            || Ok(()),
-            move |edit| win.save_metadata_edit(&ids, &edit)
+            move |edit, done| win.save_metadata_edit(ids.clone(), edit, done)
         ));
         BulkMetadataDialog::new(&books, self.series_suggestions(), on_save).present(Some(self));
     }
@@ -1179,17 +1182,47 @@ impl Window {
         Suggestions::new(names.iter().map(String::as_str))
     }
 
-    /// Makes `edit` to each Book, then reloads. A failure stops the rest and
-    /// says how many Books were updated before it.
-    fn save_metadata_edit(&self, ids: &[BookId], edit: &MetadataEdit) -> Result<(), String> {
-        let result = self.with_library_mut(|lib| lib.edit_metadata(ids, edit));
-        self.reload();
-        match result {
-            Some(Err((updated, e))) => {
-                Err(format!("Updated {updated} of {} Books: {e}", ids.len()))
-            }
-            _ => Ok(()),
+    /// Makes `edit` to each Book on a worker thread with its own database
+    /// connection, then reloads and calls `done`. A failure stops the rest
+    /// and says how many Books were updated before it.
+    fn save_metadata_edit(&self, ids: Vec<BookId>, edit: MetadataEdit, done: DoneFn) {
+        let imp = self.imp();
+        // One may have started while the dialog was open.
+        if imp.sending.get() || imp.importing.get() || imp.editing.get() {
+            done(Err(
+                "Wait for the import or send to finish, then save again".to_owned(),
+            ));
+            return;
         }
+        let Some(root) = self.with_library(|lib| lib.root().to_owned()) else {
+            done(Ok(()));
+            return;
+        };
+        imp.editing.set(true);
+        self.update_selection();
+
+        glib::spawn_future_local(glib::clone!(
+            #[weak(rename_to = win)]
+            self,
+            async move {
+                let total = ids.len();
+                let result = gio::spawn_blocking(move || {
+                    let mut library = Library::open(root).map_err(|e| (0, e))?;
+                    library.edit_metadata(&ids, &edit)
+                })
+                .await;
+                win.imp().editing.set(false);
+                win.reload();
+                win.update_selection();
+                done(match result {
+                    Ok(Ok(())) => Ok(()),
+                    Ok(Err((updated, e))) => {
+                        Err(format!("Updated {updated} of {total} Books: {e}"))
+                    }
+                    Err(_) => Err("Saving failed unexpectedly".to_owned()),
+                });
+            }
+        ));
     }
 
     /// Saves edited Metadata and, if given, a new Cover, then reloads.
@@ -1319,7 +1352,7 @@ impl Window {
     /// any of them has both. The choice is not remembered.
     fn send_selected(&self) {
         let imp = self.imp();
-        if imp.sending.get() || imp.importing.get() {
+        if imp.sending.get() || imp.importing.get() || imp.editing.get() {
             return;
         }
         let books: Vec<Book> = self
@@ -1385,7 +1418,7 @@ impl Window {
     /// until it finishes.
     fn send_books(&self, books: Vec<Book>, prefer: FormatKind) {
         let imp = self.imp();
-        if imp.sending.get() || imp.importing.get() {
+        if imp.sending.get() || imp.importing.get() || imp.editing.get() {
             return;
         }
         let Some(root) = self.with_library(|lib| lib.root().to_owned()) else {
@@ -1512,7 +1545,7 @@ impl Window {
     /// it. Their copies on a Device are orphaned, as when deleting.
     fn merge_selected(&self) {
         let imp = self.imp();
-        if imp.sending.get() || imp.importing.get() {
+        if imp.sending.get() || imp.importing.get() || imp.editing.get() {
             return;
         }
         let books: Vec<(Book, Option<PathBuf>)> = self
@@ -1533,7 +1566,8 @@ impl Window {
             self,
             move |keep: BookId, others: Vec<BookId>| {
                 // One may have started while the dialog was open.
-                if win.imp().sending.get() || win.imp().importing.get() {
+                let imp = win.imp();
+                if imp.sending.get() || imp.importing.get() || imp.editing.get() {
                     win.toast("Wait for the import or send to finish, then merge again");
                     return;
                 }

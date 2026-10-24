@@ -13,9 +13,12 @@ use gtk::glib;
 use crate::metadata_dialog::AuthorRows;
 use crate::suggestion_popover;
 
-/// Saves the edit to every Book. An `Err` is shown in the dialog, which
-/// stays open.
-pub type SaveFn = Box<dyn Fn(MetadataEdit) -> Result<(), String>>;
+/// Starts saving the edit to every Book and calls the [`DoneFn`] when it
+/// finishes. The dialog can't be changed or closed until then.
+pub type SaveFn = Box<dyn Fn(MetadataEdit, DoneFn)>;
+
+/// Says how a save went. An `Err` is shown in the dialog, which stays open.
+pub type DoneFn = Box<dyn FnOnce(Result<(), String>)>;
 
 /// A field's value across the Books being edited.
 #[derive(Debug, Clone, PartialEq)]
@@ -110,7 +113,13 @@ mod imp {
         #[template_child]
         pub toast_overlay: TemplateChild<adw::ToastOverlay>,
         #[template_child]
+        pub cancel_button: TemplateChild<gtk::Button>,
+        #[template_child]
         pub save_button: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub spinner: TemplateChild<adw::Spinner>,
+        #[template_child]
+        pub page: TemplateChild<adw::PreferencesPage>,
         #[template_child]
         pub authors_list: TemplateChild<gtk::ListBox>,
         #[template_child]
@@ -332,22 +341,108 @@ impl BulkMetadataDialog {
     }
 
     fn save(&self) {
-        let imp = self.imp();
         let edit = self.edit();
-        let result = match imp.on_save.borrow().as_ref() {
-            Some(save) => save(edit),
-            None => Ok(()),
-        };
-        match result {
-            Ok(()) => {
-                self.close();
+        self.set_saving(true);
+        let done: DoneFn = Box::new(glib::clone!(
+            #[weak(rename_to = dialog)]
+            self,
+            move |result| {
+                dialog.set_saving(false);
+                match result {
+                    Ok(()) => {
+                        dialog.close();
+                    }
+                    Err(e) => dialog.toast(&e),
+                }
             }
-            Err(e) => self.toast(&e),
+        ));
+        match self.imp().on_save.borrow().as_ref() {
+            Some(save) => save(edit, done),
+            None => done(Ok(())),
+        }
+    }
+
+    /// Shows the spinner and locks the dialog while a save runs.
+    fn set_saving(&self, saving: bool) {
+        let imp = self.imp();
+        imp.spinner.set_visible(saving);
+        imp.cancel_button.set_sensitive(!saving);
+        imp.page.set_sensitive(!saving);
+        self.set_can_close(!saving);
+        if saving {
+            imp.save_button.set_sensitive(false);
+        } else {
+            self.validate();
         }
     }
 
     fn toast(&self, title: &str) {
         let toast = adw::Toast::builder().title(title).use_markup(false).build();
         self.imp().toast_overlay.add_toast(toast);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::rc::Rc;
+
+    use armarium_core::model::BookId;
+    use gtk::gio;
+
+    use super::*;
+
+    fn book(id: i64, series: &str) -> Book {
+        Book {
+            id: BookId(id),
+            metadata: Metadata {
+                title: format!("Book {id}"),
+                series: Some(series.into()),
+                ..Default::default()
+            },
+            date_added: 0,
+            path: String::new(),
+            cover: None,
+            formats: Vec::new(),
+        }
+    }
+
+    /// One test, since GTK widgets belong to the thread that initialised
+    /// GTK. Skipped without a display.
+    #[test]
+    fn dialog_is_locked_until_the_save_finishes() {
+        if adw::init().is_err() {
+            return;
+        }
+        gio::resources_register_include!("armarium.gresource").unwrap();
+        let pending: Rc<RefCell<Option<DoneFn>>> = Rc::default();
+        let on_save: SaveFn = Box::new(glib::clone!(
+            #[strong]
+            pending,
+            move |_, done| {
+                pending.replace(Some(done));
+            }
+        ));
+        let books = [book(1, "Dune"), book(2, "Foundation")];
+        let dialog = BulkMetadataDialog::new(&books, Suggestions::new([]), on_save);
+        let imp = dialog.imp();
+        let locked = |dialog: &BulkMetadataDialog| {
+            (
+                imp.spinner.is_visible(),
+                imp.cancel_button.is_sensitive(),
+                imp.page.is_sensitive(),
+                dialog.can_close(),
+            )
+        };
+
+        imp.series_row.set_text("Discworld");
+        assert!(imp.save_button.is_sensitive());
+        imp.save_button.emit_clicked();
+        assert_eq!(locked(&dialog), (true, false, false, false));
+        assert!(!imp.save_button.is_sensitive());
+
+        let done = pending.take().expect("save started");
+        done(Err("Updated 1 of 2 Books: disk full".into()));
+        assert_eq!(locked(&dialog), (false, true, true, true));
+        assert!(imp.save_button.is_sensitive());
     }
 }
