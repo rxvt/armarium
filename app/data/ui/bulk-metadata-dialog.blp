@@ -13,7 +13,7 @@ template $ArmariumBulkMetadataDialog: Adw.Dialog {
         show-end-title-buttons: false;
 
         [start]
-        Gtk.Button {
+        Gtk.Button cancel_button {
           label: _("_Cancel");
           use-underline: true;
           clicked => $on_cancel() swapped;
@@ -29,9 +29,15 @@ template $ArmariumBulkMetadataDialog: Adw.Dialog {
             "suggested-action",
           ]
         }
+
+        [end]
+        Adw.Spinner spinner {
+          visible: false;
+          tooltip-text: _("Saving");
+        }
       }
 
-      content: Adw.PreferencesPage {
+      content: Adw.PreferencesPage page {
         Adw.PreferencesGroup {
           description: _("Only the fields you change are saved. Authors replace each book’s authors.");
         }
