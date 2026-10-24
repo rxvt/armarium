@@ -11,7 +11,7 @@ use gtk::prelude::*;
 use gtk::subclass::prelude::*;
 
 use crate::book_object;
-use crate::thumbnails::Thumbnails;
+use crate::thumbnails::{self, Thumbnails};
 
 mod imp {
     use super::*;
@@ -98,7 +98,7 @@ impl BookTile {
         imp.author_label.set_label(&authors);
         imp.placeholder_title.set_label(&book.metadata.title);
         imp.placeholder_author.set_label(&authors);
-        imp.picture.set_paintable(gtk::gdk::Paintable::NONE);
+        thumbnails::show_cover(&imp.picture, None);
         imp.placeholder.set_visible(true);
 
         let Some(cover) = cover else { return };
@@ -111,7 +111,7 @@ impl BookTile {
                 && tile.imp().book.get() == Some(id)
                 && let Some(texture) = texture
             {
-                tile.imp().picture.set_paintable(Some(&texture));
+                thumbnails::show_cover(&tile.imp().picture, Some(&texture));
                 tile.imp().placeholder.set_visible(false);
             }
         });
@@ -119,7 +119,7 @@ impl BookTile {
 
     pub fn unbind(&self) {
         self.imp().book.set(None);
-        self.imp().picture.set_paintable(gtk::gdk::Paintable::NONE);
+        thumbnails::show_cover(&self.imp().picture, None);
     }
 }
 

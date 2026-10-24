@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 use armarium_core::cover;
+use gtk::prelude::*;
 use gtk::{gdk, gio};
 
 use crate::profile;
@@ -17,6 +18,10 @@ use crate::profile;
 const THUMB_MAX_SIDE: u32 = 720;
 /// Textures kept in memory; tiles scrolled far away reload from disk.
 const MEMORY_ENTRIES: usize = 300;
+/// How far a Cover's aspect ratio may stray from 2:3 and still fill its
+/// picture; cropping that little is invisible, and it avoids slivers of
+/// backdrop from rounding.
+const FILL_TOLERANCE: f64 = 0.03;
 
 pub struct Thumbnails {
     dir: PathBuf,
@@ -81,4 +86,46 @@ fn load_blocking(dir: &Path, cover: &Path) -> Option<gdk::Texture> {
         cover::thumbnail(cover, &thumb, THUMB_MAX_SIDE).ok()?;
     }
     gdk::Texture::from_filename(&thumb).ok()
+}
+
+/// Shows `texture` in a 2:3 Cover `picture`, or clears it. A Cover close to
+/// 2:3 fills the picture; any other is shown whole on a neutral backdrop
+/// rather than cropped.
+pub fn show_cover(picture: &gtk::Picture, texture: Option<&gdk::Texture>) {
+    let letterbox = texture.is_some_and(|t| !fills_2_3(t.width(), t.height()));
+    if letterbox {
+        picture.set_content_fit(gtk::ContentFit::Contain);
+        picture.add_css_class("cover-backdrop");
+    } else {
+        picture.set_content_fit(gtk::ContentFit::Cover);
+        picture.remove_css_class("cover-backdrop");
+    }
+    picture.set_paintable(texture);
+}
+
+fn fills_2_3(width: i32, height: i32) -> bool {
+    if width <= 0 || height <= 0 {
+        return true;
+    }
+    let ratio = (f64::from(width) / f64::from(height)) / (2.0 / 3.0);
+    (ratio - 1.0).abs() <= FILL_TOLERANCE
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fills_2_3;
+
+    #[test]
+    fn covers_near_2_3_fill() {
+        assert!(fills_2_3(600, 900));
+        assert!(fills_2_3(1000, 1530));
+        assert!(fills_2_3(1000, 1480));
+    }
+
+    #[test]
+    fn other_shapes_are_letterboxed() {
+        assert!(!fills_2_3(974, 1200));
+        assert!(!fills_2_3(900, 900));
+        assert!(!fills_2_3(500, 900));
+    }
 }
