@@ -23,6 +23,7 @@ fn main() -> glib::ExitCode {
 
     let app = adw::Application::builder()
         .application_id(profile::APP_ID)
+        .flags(profile::APP_FLAGS)
         .resource_base_path("/io/github/rxvt/Armarium")
         .build();
     app.connect_startup(setup_actions);
