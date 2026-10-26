@@ -9,14 +9,16 @@ git fetch origin
 git worktree add .claude/worktrees/<name> -b worktree-<name> origin/main
 ```
 
-- Never commit directly to `main`; changes reach `main` through a pull request from the worktree's branch.
+- Changes reach `main` through a pull request from the worktree's branch, except small fixes (see below).
 - Commit your work in the worktree before finishing, so it survives the worktree being removed.
 - Don't use `git stash`: the stash is shared by every worktree, so another session can pop your changes. Set work aside with a temporary commit instead.
 - Read-only tasks (answering questions, searching, reviewing) can run in place.
 
 ## Ship through CodeRabbit
 
-A task that changes the repo is done when its pull request has passed CodeRabbit review, not when the commit lands. Once the work is committed, carry it through without waiting to be asked:
+A **small fix** changes no code behaviour: README and other docs, comments, typos, formatting. Commit it in the worktree and push it straight to `main` (`git push origin HEAD:main`), with no pull request or review.
+
+Every other change is done when its pull request has passed CodeRabbit review, not when the commit lands. Once the work is committed, carry it through without waiting to be asked:
 
 1. Push the branch and open a pull request against `main` with `gh pr create`.
 2. Wait for the `CodeRabbit` check to finish (`gh pr checks <n>` shows `Review completed`); a review typically takes several minutes.
