@@ -289,18 +289,17 @@ pub struct SortKeys {
 
 impl SortKeys {
     /// Compares by `key`, then by title, then by id, so the order is total.
-    /// Date added ties go straight to the id, i.e. Import order, since a
-    /// whole Import usually lands in the same second.
+    /// Authors ties go by series first, so each author's series read in
+    /// order. Date added ties go straight to the id, i.e. Import order, since
+    /// a whole Import usually lands in the same second.
     pub fn compare(&self, other: &SortKeys, key: SortKey) -> Ordering {
         let primary = match key {
             SortKey::Title => Ordering::Equal,
-            SortKey::Authors => self.authors.cmp(&other.authors),
-            SortKey::Series => match (&self.series, &other.series) {
-                (Some((a, i)), Some((b, j))) => a.cmp(b).then(i.total_cmp(j)),
-                (Some(_), None) => Ordering::Less,
-                (None, Some(_)) => Ordering::Greater,
-                (None, None) => Ordering::Equal,
-            },
+            SortKey::Authors => self
+                .authors
+                .cmp(&other.authors)
+                .then_with(|| self.compare_series(other)),
+            SortKey::Series => self.compare_series(other),
             SortKey::Formats => self.formats.cmp(&other.formats),
             SortKey::DateAdded => self
                 .date_added
@@ -310,6 +309,15 @@ impl SortKeys {
         primary
             .then_with(|| self.title.cmp(&other.title))
             .then(self.id.cmp(&other.id))
+    }
+
+    fn compare_series(&self, other: &SortKeys) -> Ordering {
+        match (&self.series, &other.series) {
+            (Some((a, i)), Some((b, j))) => a.cmp(b).then(i.total_cmp(j)),
+            (Some(_), None) => Ordering::Less,
+            (None, Some(_)) => Ordering::Greater,
+            (None, None) => Ordering::Equal,
+        }
     }
 }
 
@@ -433,6 +441,25 @@ mod tests {
         assert_eq!(
             sorted_titles(&books, SortKey::Series),
             ["Second", "Tenth", "Other", "Standalone"]
+        );
+    }
+
+    #[test]
+    fn sorts_each_authors_books_by_series_then_index_with_no_series_last() {
+        let mut books = [
+            book(1, "Alpha Two", "Jane Austen"),
+            book(2, "Standalone", "Jane Austen"),
+            book(3, "Beta One", "Jane Austen"),
+            book(4, "Alpha Ten", "Jane Austen"),
+            book(5, "Dune", "Frank Herbert"),
+        ];
+        for (i, series, index) in [(0, "Alpha", 2.0), (2, "Beta", 1.0), (3, "Alpha", 10.0)] {
+            books[i].metadata.series = Some(series.into());
+            books[i].metadata.series_index = Some(index);
+        }
+        assert_eq!(
+            sorted_titles(&books, SortKey::Authors),
+            ["Alpha Two", "Alpha Ten", "Beta One", "Standalone", "Dune"]
         );
     }
 
