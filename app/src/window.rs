@@ -185,7 +185,7 @@ mod imp {
             let _ = self.settings.set(settings);
             if profile::DEVEL {
                 obj.add_css_class("devel");
-                obj.set_title(Some("Armarium (Development)"));
+                obj.set_title(Some(&profile::devel_window_title()));
             }
             self.thumbnails.replace(Some(Rc::new(Thumbnails::new())));
             obj.setup_models();
