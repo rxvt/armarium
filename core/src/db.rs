@@ -57,6 +57,30 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX formats_size ON formats (size);
     ",
+    // 2: never reuse a Book id, since Device copies are matched by it
+    // (ADR 0005). SQLite can't add AUTOINCREMENT in place, so rebuild the
+    // table; the copy seeds sqlite_sequence with the current max id.
+    "
+    CREATE TABLE books_new (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        title        TEXT    NOT NULL,
+        series       TEXT,
+        series_index REAL,
+        publisher    TEXT,
+        published    TEXT,
+        language     TEXT,
+        isbn         TEXT,
+        description  TEXT,
+        date_added   INTEGER NOT NULL,
+        path         TEXT    NOT NULL,
+        match_key    TEXT    NOT NULL,
+        cover        TEXT    -- CoverSource, NULL when there is no cover.jpg
+    );
+    INSERT INTO books_new SELECT * FROM books;
+    DROP TABLE books;
+    ALTER TABLE books_new RENAME TO books;
+    CREATE INDEX books_match_key ON books (match_key);
+    ",
 ];
 
 pub struct Database {
@@ -325,11 +349,37 @@ impl Database {
     }
 }
 
+/// Foreign keys are off while migrating, so a migration can rebuild a table
+/// that others reference without cascading deletes (`PRAGMA foreign_keys` is
+/// a no-op inside a transaction). Each migration is checked before commit.
 fn migrate(conn: &mut Connection) -> Result<()> {
     let current = schema_version(conn)?;
+    if current >= MIGRATIONS.len() {
+        return Ok(());
+    }
+    let foreign_keys: bool = conn.pragma_query_value(None, "foreign_keys", |row| row.get(0))?;
+    conn.pragma_update(None, "foreign_keys", false)?;
+    let result = run_migrations(conn, current);
+    conn.pragma_update(None, "foreign_keys", foreign_keys)?;
+    result
+}
+
+fn run_migrations(conn: &mut Connection, current: usize) -> Result<()> {
     for (i, sql) in MIGRATIONS.iter().enumerate().skip(current) {
         let tx = conn.transaction()?;
         tx.execute_batch(sql)?;
+        let violation: Option<String> = tx
+            .query_row("PRAGMA foreign_key_check", [], |row| row.get(0))
+            .optional()?;
+        if let Some(table) = violation {
+            return Err(Error::SqliteFailure(
+                rusqlite::ffi::Error::new(rusqlite::ffi::SQLITE_CONSTRAINT_FOREIGNKEY),
+                Some(format!(
+                    "migration {} broke a foreign key in {table}",
+                    i + 1
+                )),
+            ));
+        }
         tx.pragma_update(None, "user_version", i as i64 + 1)?;
         tx.commit()?;
     }
@@ -640,5 +690,64 @@ mod tests {
 
         assert!(result.is_err());
         assert_eq!(db.books().unwrap(), before);
+    }
+
+    #[test]
+    fn deleting_the_newest_book_does_not_free_its_id() {
+        let db = Database::open_in_memory().unwrap();
+        book_by(&db, "Dune", &[], 1);
+        let newest = book_by(&db, "Emma", &[], 2);
+        db.remove_book(newest).unwrap();
+
+        assert!(book_by(&db, "Ulysses", &[], 3) > newest);
+    }
+
+    /// A Library at schema version 1, opened without migrating further.
+    fn version_1_database() -> Database {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.pragma_update(None, "foreign_keys", true).unwrap();
+        conn.execute_batch(MIGRATIONS[0]).unwrap();
+        conn.pragma_update(None, "user_version", 1).unwrap();
+        Database { conn }
+    }
+
+    #[test]
+    fn migrating_from_version_1_keeps_every_book() {
+        let mut db = version_1_database();
+        let dune = db.insert_book(&dune(), 1).unwrap();
+        db.set_book_path(dune, "Frank Herbert/Dune (1)").unwrap();
+        db.add_format(dune, FormatKind::Epub, "Dune.epub", 10)
+            .unwrap();
+        db.add_format(dune, FormatKind::Pdf, "Dune.pdf", 20)
+            .unwrap();
+        db.set_cover_source(dune, Some(CoverSource::User)).unwrap();
+        book_by(&db, "Good Omens", &["Terry Pratchett", "Neil Gaiman"], 2);
+        let newest = book_by(&db, "Emma", &["Jane Austen"], 3);
+        let before = db.books().unwrap();
+
+        migrate(&mut db.conn).unwrap();
+
+        assert_eq!(db.schema_version().unwrap(), MIGRATIONS.len());
+        assert_eq!(db.books().unwrap(), before);
+        let violations: Option<String> = db
+            .conn
+            .query_row("PRAGMA foreign_key_check", [], |r| r.get(0))
+            .optional()
+            .unwrap();
+        assert_eq!(violations, None);
+        let foreign_keys: bool = db
+            .conn
+            .pragma_query_value(None, "foreign_keys", |r| r.get(0))
+            .unwrap();
+        assert!(foreign_keys);
+        // The rebuilt table still cascades and no longer reuses ids.
+        db.remove_book(newest).unwrap();
+        assert!(book_by(&db, "Ulysses", &[], 4) > newest);
+        db.remove_book(dune).unwrap();
+        let formats: i64 = db
+            .conn
+            .query_row("SELECT count(*) FROM formats", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(formats, 0);
     }
 }
