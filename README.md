@@ -83,4 +83,4 @@ Armarium is also built on the work of the [GTK](https://gtk.org), [libadwaita](h
 
 ## License
 
-[GPL-3.0-or-later](LICENSE). The files ported from calibre are GPL-3.0-only, as calibre is, so Armarium as a whole is distributed under GPL-3.0.
+Armarium is distributed under the [GNU GPL, version 3](LICENSE) only. Its own code is GPL-3.0-or-later; the files ported from calibre (`core/src/azw3/`) are GPL-3.0-only, as calibre is. [NOTICE](NOTICE) has the details.
