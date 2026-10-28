@@ -4,6 +4,8 @@ A personal desktop ebook library for DRM-free books on Linux. Built with GTK4 an
 
 Armarium collects your EPUBs and PDFs into one managed folder, keeps their metadata and covers, and lets you browse them as a cover grid or a list.
 
+![The Library as a cover grid, with the selected Book's details alongside](docs/screenshots/library.webp)
+
 ## Features
 
 - **Import** files or whole folders. Files are copied, never moved. Duplicates are skipped, and a PDF and EPUB of the same book are merged into one Book.
@@ -14,6 +16,10 @@ Armarium collects your EPUBs and PDFs into one managed folder, keeps their metad
 - **Merge** books that Import kept apart, such as a PDF with no metadata and its EPUB. You pick the book whose metadata and cover to keep, and it gains the others' formats.
 - **Delete** to the Trash.
 - **Send to a Kindle** over USB. EPUBs are converted to AZW3 with their current metadata and cover, and PDFs are copied as they are; for a book with both, you choose which. Books on the Kindle get a tick, and re-sending a Book keeps its reading position and highlights.
+
+| Editing metadata | Replacing a cover |
+| --- | --- |
+| ![The Edit Metadata dialog](docs/screenshots/edit-metadata.webp) | ![Choosing a new cover](docs/screenshots/replace-cover.webp) |
 
 ## Library
 
